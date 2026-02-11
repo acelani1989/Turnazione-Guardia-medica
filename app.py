@@ -24,16 +24,12 @@ st.markdown("""
 # --- 2. FUNZIONI UTILI ---
 def get_festivita(anno):
     def calcola_pasqua(y):
-        a = y % 19
-        b = y // 100
-        c = y % 100
-        d = b // 4
-        e = b % 4
+        a, b, c = y % 19, y // 100, y % 100
+        d, e = b // 4, b % 4
         f = (b + 8) // 25
         g = (b - f + 1) // 3
         h = (19 * a + b - d - g + 15) % 30
-        i = c // 4
-        k = c % 4
+        i, k = c // 4, c % 4
         l = (32 + 2 * e + 2 * i - h - k) % 7
         m = (a + 11 * h + 22 * l) // 451
         mese = (h + l - 7 * m + 114) // 31
@@ -42,10 +38,10 @@ def get_festivita(anno):
 
     g_p, m_p = calcola_pasqua(anno)
     dt_p = datetime(anno, m_p, g_p)
-    if g_p == calendar.monthrange(anno, m_p)[1]:
-        dt_pp = datetime(anno, m_p + 1, 1)
-    else:
-        dt_pp = datetime(anno, m_p, g_p + 1)
+    try:
+        dt_pp = dt_p.replace(day=g_p+1)
+    except ValueError:
+        dt_pp = datetime(anno, m_p+1, 1)
 
     return {
         (1, 1): "Capodanno", (6, 1): "Epifania",
@@ -129,23 +125,32 @@ with st.sidebar:
                     st.rerun()
 
     st.divider()
-    st.markdown("### 💾 Backup Dati")
-    # Export
-    backup_data = {"medici": st.session_state.medici, "assenze": st.session_state.assenze}
-    json_str = json.dumps(backup_data)
-    st.download_button("ESPORTA BACKUP", data=json_str, file_name="backup_guardia_medica.json", mime="application/json", use_container_width=True)
-    
-    # Import
-    uploaded_file = st.file_uploader("IMPORTA BACKUP", type="json")
-    if uploaded_file is not None:
+    st.markdown("### 💾 Backup e Ripristino")
+    # Esporta Backup
+    data_to_save = {
+        "medici": st.session_state.medici,
+        "assenze": st.session_state.assenze
+    }
+    json_data = json.dumps(data_to_save, indent=4)
+    st.download_button(
+        label="📥 ESPORTA BACKUP (JSON)",
+        data=json_data,
+        file_name=f"backup_guardia_{datetime.now().strftime('%Y%m%d')}.json",
+        mime="application/json",
+        use_container_width=True
+    )
+
+    # Importa Backup
+    uploaded_backup = st.file_uploader("📤 IMPORTA BACKUP", type=["json"])
+    if uploaded_backup:
         try:
-            data = json.load(uploaded_file)
-            st.session_state.medici = data["medici"]
-            st.session_state.assenze = data["assenze"]
-            st.success("Backup caricato!")
-            st.rerun()
-        except:
-            st.error("Errore nel file.")
+            imported_data = json.load(uploaded_backup)
+            st.session_state.medici = imported_data["medici"]
+            st.session_state.assenze = imported_data["assenze"]
+            st.success("Dati ripristinati con successo!")
+            if st.button("Aggiorna Interfaccia"): st.rerun()
+        except Exception:
+            st.error("File di backup non valido.")
 
 # --- 5. DASHBOARD ORARI ---
 st.markdown(f"<div class='main-title'>Gestione Turni: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
@@ -175,94 +180,17 @@ if st.button("🚀 GENERA PIANO TURNI", type="primary", use_container_width=True
     for d in range(1, gg_m + 1):
         dt = datetime(anno_sel, m_idx_v, d)
         wd = dt.weekday()
+        
         is_festivo_nazionale = (d, m_idx_v) in festivita_anno
-        is_prefestivo_speciale = (d == 24 and m_idx_v == 2)
+        is_prefestivo_speciale = (d == 24 and m_idx_v == 2) # Prefestivo 24 Febbraio
         
         tipo = "Feriale"
         if wd == 5 or is_prefestivo_speciale: tipo = "Prefestivo"
         if wd == 6 or is_festivo_nazionale: tipo = "Festivo"
         
         nome_fest = f" ({festivita_anno[(d, m_idx_v)]})" if is_festivo_nazionale else ""
+        
         disp_oggi = [m for m in st.session_state.medici if d not in st.session_state.assenze.get(m, [])]
         if not disp_oggi: disp_oggi = st.session_state.medici
-        disp_notte = [m for m in disp_oggi if m != ultimo_notte]
-        if not disp_notte: disp_notte = disp_oggi
-
-        if tipo == "Festivo":
-            m_mat_list = random.sample(disp_oggi, min(2, len(disp_oggi))) if div_f else [random.choice(disp_oggi)]
-            mat_txt = " / ".join(m_mat_list)
-            rest_p = [m for m in disp_oggi if m not in m_mat_list]
-            pom_m = random.choice(rest_p) if rest_p else random.choice(disp_oggi)
-            rest_n = [m for m in disp_notte if m != pom_m and m not in m_mat_list]
-            not_m = random.choice(rest_n) if rest_n else random.choice(disp_notte)
-            h_m, h_p, h_n = fes_m, fes_p, fes_n
-        elif tipo == "Prefestivo":
-            mat_txt, h_m = "---", "---"
-            pom_m = random.choice(disp_oggi)
-            rest_n = [m for m in disp_notte if m != pom_m]
-            not_m = random.choice(rest_n) if rest_n else random.choice(disp_notte)
-            h_p, h_n = p_p, p_n
-        else:
-            mat_txt, h_m = "---", "---"
-            pom_m, h_p = "---", "---"
-            not_m = random.choice(disp_notte)
-            h_n = f_n
-
-        ultimo_notte = not_m
-        data_list.append({
-            "Data": f"{d} {giorni_sett[wd]}{nome_fest}", "Tipo": tipo, 
-            "Mattina": mat_txt, "Pomeriggio": pom_m, "Notte": not_m,
-            "H_M": h_m, "H_P": h_p, "H_N": h_n
-        })
-    st.session_state.db_turni = pd.DataFrame(data_list)
-
-# --- 7. TABELLONE E RIEPILOGO ORE ---
-if not st.session_state.db_turni.empty:
-    st.markdown("### 📅 Tabellone")
-    lista_opzioni = ["---"] + st.session_state.medici
-    edited_db = st.data_editor(st.session_state.db_turni, column_config={
-        "Data": st.column_config.Column("Giorno", width="medium", disabled=True),
-        "Mattina": st.column_config.SelectboxColumn("☀️ Mattina", options=lista_opzioni),
-        "Pomeriggio": st.column_config.SelectboxColumn("🌤️ Pomeriggio", options=lista_opzioni),
-        "Notte": st.column_config.SelectboxColumn("🌙 Notte", options=lista_opzioni),
-        "Tipo": None, "H_M": None, "H_P": None, "H_N": None,
-    }, use_container_width=True, hide_index=True)
-    st.session_state.db_turni = edited_db
-
-    st.divider()
-    col_rec, col_down = st.columns([2, 1])
-    with col_rec:
-        st.markdown("#### 📊 Ore Mensili")
-        ore_calc = {m: 0.0 for m in st.session_state.medici}
-        for _, r in st.session_state.db_turni.iterrows():
-            if r["Pomeriggio"] in ore_calc: ore_calc[r["Pomeriggio"]] += calcola_durata(r["H_P"])
-            if r["Notte"] in ore_calc: ore_calc[r["Notte"]] += calcola_durata(r["H_N"])
-            if "/" in str(r["Mattina"]):
-                for p in r["Mattina"].split("/"):
-                    p_c = p.strip()
-                    if p_c in ore_calc: ore_calc[p_c] += (calcola_durata(r["H_M"]) / 2)
-            elif r["Mattina"] in ore_calc: ore_calc[r["Mattina"]] += calcola_durata(r["H_M"])
-        st.dataframe(pd.DataFrame([{"Medico": m, "Ore": f"{h:.1f}"} for m, h in ore_calc.items()]), hide_index=True)
-
-    with col_down:
-        def genera_pdf():
-            buf = io.BytesIO()
-            doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=0.8*cm, bottomMargin=0.8*cm)
-            elements = [Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", getSampleStyleSheet()['Title']), Spacer(1, 8)]
-            data_pdf = [["GIORNO", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
-            for _, r in st.session_state.db_turni.iterrows():
-                data_pdf.append([r["Data"], r["Tipo"], r["Mattina"], r["Pomeriggio"], r["Notte"]])
-            
-            t = Table(data_pdf, colWidths=[110, 70, 185, 185, 185], repeatRows=1)
-            t.setStyle(TableStyle([
-                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                ('FONTSIZE', (0,0), (-1,-1), 7.5),
-                ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
-                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ]))
-            elements.append(t)
-            doc.build(elements)
-            return buf.getvalue()
-        st.download_button("📥 SCARICA PDF (PAGINA SINGOLA)", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
+        
+        disp_notte = [m for m in disp_
