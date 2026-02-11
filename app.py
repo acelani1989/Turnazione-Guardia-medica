@@ -27,24 +27,15 @@ def get_info_giorno(dt):
         (25, 12): "NATALE",
         (26, 12): "SANTO STEFANO"
     }
-    
-    # Pasqua e Pasquetta 2026
     if dt.month == 4 and dt.day == 5: return "Festivo", "PASQUA"
     if dt.month == 4 and dt.day == 6: return "Festivo", "LUNEDÌ DELL'ANGELO"
-    
-    # San Gerlando e Vigilia
     if dt.month == 2 and dt.day == 25: return "Festivo", "SAN GERLANDO"
     if dt.month == 2 and dt.day == 24: return "Prefestivo", "VIGILIA PATRONO"
-    
-    # Controllo festivi fissi
     if (dt.day, dt.month) in festivi_fissi:
         return "Festivo", festivi_fissi[(dt.day, dt.month)]
-    
-    # Weekend
     wd = dt.weekday()
     if wd == 6: return "Festivo", "DOMENICA"
     if wd == 5: return "Prefestivo", "SABATO"
-    
     return "Feriale", ""
 
 # --- 3. FUNZIONI UTILI ---
@@ -147,41 +138,4 @@ if st.button("🚀 GENERA PIANO TURNI", type="primary", use_container_width=True
         data_list.append({
             "Data": f"{d} {wd_nome}", "Tipo": tipo, "Descrizione": desc,
             "Mattina": mat_txt, "Pomeriggio": pom_m, "Notte": not_m,
-            "H_M": h_m, "H_P": h_p, "H_N": h_n
-        })
-    st.session_state.db_turni = pd.DataFrame(data_list)
-
-# --- 8. TABELLONE COLORATO & PDF ---
-if not st.session_state.db_turni.empty:
-    st.markdown("### 📝 Tabellone Turni")
-    
-    # Funzione per colorare le righe nell'editor
-    def colora_tipo(row):
-        if row.Tipo == "Festivo": return ['background-color: #ffebee'] * len(row) # Rosso chiaro
-        if row.Tipo == "Prefestivo": return ['background-color: #fff9c4'] * len(row) # Giallo chiaro
-        return [''] * len(row)
-
-    lista_opzioni = ["---"] + st.session_state.medici
-    
-    # Usiamo lo stile per visualizzare i colori
-    st.dataframe(st.session_state.db_turni.style.apply(colora_tipo, axis=1), use_container_width=True)
-    
-    st.info("💡 Usa la tabella sotto per modificare i nomi se necessario:")
-    edited_db = st.data_editor(
-        st.session_state.db_turni[["Data", "Tipo", "Descrizione", "Mattina", "Pomeriggio", "Notte"]],
-        column_config={
-            "Mattina": st.column_config.SelectboxColumn("Mattina", options=lista_opzioni),
-            "Pomeriggio": st.column_config.SelectboxColumn("Pomeriggio", options=lista_opzioni),
-            "Notte": st.column_config.SelectboxColumn("Notte", options=lista_opzioni),
-        },
-        use_container_width=True, hide_index=True
-    )
-    
-    # Calcolo Ore
-    ore_calc = {m: 0.0 for m in st.session_state.medici}
-    for i, r in st.session_state.db_turni.iterrows():
-        # Aggiorna con eventuali modifiche dell'editor
-        r_mod = edited_db.iloc[i]
-        if r_mod["Pomeriggio"] in ore_calc: ore_calc[r_mod["Pomeriggio"]] += calcola_durata(r["H_P"])
-        if r_mod["Notte"] in ore_calc: ore_calc[r_mod["Notte"]] += calcola_durata(r["H_N"])
-        if r
+            "H_M": h_m, "H_P": h_p, "H_N
