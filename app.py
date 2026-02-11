@@ -164,12 +164,9 @@ if st.button("🚀 GENERA PIANO TURNI", type="primary", use_container_width=True
 
 # --- 7. TABELLONE E RIEPILOGO ORE ---
 if not st.session_state.db_turni.empty:
-    st.markdown("### 📅 Tabellone Risultante (Modificabile con Tendina)")
+    st.markdown("### 📅 Tabellone Risultante (Modificabile)")
     
-    # Lista medici per la tendina + opzione vuota
     lista_opzioni = ["---"] + st.session_state.medici
-    
-    # Trasformiamo il tabellone in un editor con tendine
     edited_db = st.data_editor(
         st.session_state.db_turni,
         column_config={
@@ -186,8 +183,6 @@ if not st.session_state.db_turni.empty:
         hide_index=True,
         key="main_table_editor"
     )
-    
-    # Aggiorna lo stato con i dati editati per il calcolo ore e PDF
     st.session_state.db_turni = edited_db
 
     st.divider()
@@ -198,7 +193,6 @@ if not st.session_state.db_turni.empty:
         if r["Pomeriggio"] in ore_calc: ore_calc[r["Pomeriggio"]] += calcola_durata(r["H_P"])
         if r["Notte"] in ore_calc: ore_calc[r["Notte"]] += calcola_durata(r["H_N"])
         
-        # Gestione mattina (singola o divisa)
         if "/" in str(r["Mattina"]):
             for p in r["Mattina"].split("/"):
                 p_c = p.strip()
@@ -207,19 +201,58 @@ if not st.session_state.db_turni.empty:
             ore_calc[r["Mattina"]] += calcola_durata(r["H_M"])
 
     df_ore = pd.DataFrame([{"Medico": m, "Ore Totali": h} for m, h in ore_calc.items()])
-    st.data_editor(df_ore, use_container_width=True, hide_index=True, key="ore_editor")
+    edited_ore = st.data_editor(df_ore, use_container_width=True, hide_index=True, key="ore_editor")
 
     def genera_pdf():
         buf = io.BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=landscape(A4))
-        elements = [Paragraph(f"TURNI {mese_nome.upper()} {anno_sel}", getSampleStyleSheet()['Title']), Spacer(1, 15)]
+        doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=30, bottomMargin=30)
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        # Titolo
+        elements.append(Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", styles['Title']))
+        elements.append(Spacer(1, 20))
+        
+        # Tabellone Principale con Orari
         data_pdf = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
         for _, r in st.session_state.db_turni.iterrows():
-            data_pdf.append([r["Data"], r["Tipo"], r["Mattina"], r["Pomeriggio"], r["Notte"]])
-        t = Table(data_pdf, colWidths=[80, 70, 180, 180, 180])
-        t.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
+            # Aggiunta orari al nome del medico per il PDF
+            m_txt = f"{r['Mattina']} ({r['H_M']})" if r['Mattina'] != "---" else "---"
+            p_txt = f"{r['Pomeriggio']} ({r['H_P']})" if r['Pomeriggio'] != "---" else "---"
+            n_txt = f"{r['Notte']} ({r['H_N']})" if r['Notte'] != "---" else "---"
+            data_pdf.append([r["Data"], r["Tipo"], m_txt, p_txt, n_txt])
+        
+        t = Table(data_pdf, colWidths=[80, 70, 190, 190, 190])
+        t.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTSIZE', (0,0), (-1,-1), 9),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
         elements.append(t)
+        
+        # Sezione Riepilogo Ore nel PDF
+        elements.append(Spacer(1, 30))
+        elements.append(Paragraph("RIEPILOGO ORE MENSILI", styles['Heading2']))
+        elements.append(Spacer(1, 10))
+        
+        data_ore_pdf = [["MEDICO", "TOTALE ORE"]]
+        # Usiamo i dati dall'editor delle ore (che potrebbero essere stati modificati a mano)
+        for _, r_ore in edited_ore.iterrows():
+            data_ore_pdf.append([r_ore["Medico"], f"{r_ore['Ore Totali']} h"])
+            
+        t_ore = Table(data_ore_pdf, colWidths=[200, 100])
+        t_ore.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ]))
+        elements.append(t_ore)
+        
         doc.build(elements)
         return buf.getvalue()
 
-    st.download_button("📥 SCARICA PDF", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
+    st.download_button("📥 SCARICA PDF COMPLETO", data=genera_pdf(), file_name=f"Turni_{mese_nome}_Completo.pdf", use_container_width=True)
