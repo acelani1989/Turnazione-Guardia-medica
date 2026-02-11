@@ -58,7 +58,7 @@ if 'assenze' not in st.session_state:
 if 'db_turni' not in st.session_state: 
     st.session_state.db_turni = pd.DataFrame()
 
-# --- 5. SIDEBAR (Calendario e Scorciatoie) ---
+# --- 5. SIDEBAR ---
 with st.sidebar:
     st.header("📅 Periodo e Staff")
     anno_sel = st.number_input("Anno:", min_value=2024, max_value=2030, value=2026)
@@ -108,10 +108,6 @@ with st.sidebar:
                     if is_abs: st.session_state.assenze[m_sel].remove(day)
                     else: st.session_state.assenze[m_sel].append(day)
                     st.rerun()
-    
-    if st.button("🧹 Svuota Assenze " + m_sel):
-        st.session_state.assenze[m_sel] = []
-        st.rerun()
 
 # --- 6. DASHBOARD ORARI ---
 st.title(f"Gestione Turni Porto Empedocle - {mese_nome} {anno_sel}")
@@ -138,4 +134,34 @@ if st.button("🚀 GENERA PIANO TURNI", type="primary", use_container_width=True
     for d in range(1, gg_m + 1):
         dt = datetime(anno_sel, m_idx_v, d)
         tipo, desc = get_info_giorno(dt)
-        wd_nome = g_sett[dt
+        wd_nome = g_sett[dt.weekday()]
+        
+        disp_oggi = [m for m in st.session_state.medici if d not in st.session_state.assenze.get(m, [])]
+        disp_notte = [m for m in disp_oggi if m != ultimo_notte]
+        if not disp_notte: disp_notte = disp_oggi if disp_oggi else st.session_state.medici
+
+        if tipo == "Festivo":
+            m_mat_list = random.sample(disp_oggi, min(2, len(disp_oggi))) if div_f else [random.choice(disp_oggi)]
+            mat_txt = " / ".join(m_mat_list)
+            rest_p = [m for m in disp_oggi if m not in m_mat_list]
+            pom_m = random.choice(rest_p) if rest_p else random.choice(disp_oggi)
+            rest_n = [m for m in disp_notte if m != pom_m and m not in m_mat_list]
+            not_m = random.choice(rest_n) if rest_n else random.choice(disp_notte)
+            h_m, h_p, h_n = fes_m, fes_p, fes_n
+        elif tipo == "Prefestivo":
+            mat_txt, h_m = "---", "---"
+            pom_m = random.choice(disp_oggi)
+            rest_n = [m for m in disp_notte if m != pom_m]
+            not_m = random.choice(rest_n) if rest_n else random.choice(disp_notte)
+            h_p, h_n = p_p, p_n
+        else:
+            mat_txt, h_m = "---", "---"
+            pom_m, h_p = "---", "---"
+            not_m = random.choice(disp_notte)
+            h_n = f_n
+
+        ultimo_notte = not_m
+        data_list.append({
+            "Data": f"{d} {wd_nome}", "Tipo": tipo, "Descrizione": desc,
+            "Mattina": mat_txt, "Pomeriggio": pom_m, "Notte": not_m,
+            "H_M": h_m, "H_P": h_p, "H_N": h_n
