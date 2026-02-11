@@ -109,8 +109,7 @@ with st.sidebar:
         st.success(f"Assenze rimosse per {m_sel}")
         st.rerun()
 
-    # --- SEZIONE BACKUP IN BASSO A SINISTRA ---
-    st.markdown("<br><br><br>", unsafe_allow_html=True) # Spinge la sezione in basso
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
     st.markdown("<div class='sidebar-header'>💾 BACKUP E RIPRISTINO</div>", unsafe_allow_html=True)
     
     uploaded_file = st.file_uploader("Carica Backup (JSON)", type="json")
@@ -193,11 +192,12 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
         data_list.append({"Data": f"{d} {giorni_sett[wd]}{nome_fest}", "Tipo": tipo, "Mattina": mat_txt, "Pomeriggio": pom_m, "Notte": not_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
     st.session_state.db_turni = pd.DataFrame(data_list)
 
-# --- 7. TAB, ANTEPRIMA E RIEPILOGO ---
+# --- 7. TAB E ANTEPRIMA ---
 if not st.session_state.db_turni.empty:
-    tab1, tab2, tab3 = st.tabs(["📝 Modifica Dati", "👁️ Anteprima Grafica", "📊 Riepilogo Ore"])
+    tab1, tab2 = st.tabs(["📝 Modifica Dati & Ore", "👁️ Anteprima Grafica PDF"])
     
     with tab1:
+        st.subheader("Correzione Manuale Turni")
         lista_opzioni = ["---"] + st.session_state.medici
         st.session_state.db_turni = st.data_editor(st.session_state.db_turni, column_config={
             "Data": st.column_config.Column("Giorno", disabled=True),
@@ -206,6 +206,22 @@ if not st.session_state.db_turni.empty:
             "Notte": st.column_config.SelectboxColumn("🌙 Notte", options=lista_opzioni),
             "Tipo": None, "H_M": None, "H_P": None, "H_N": None,
         }, use_container_width=True, hide_index=True)
+
+        # RIEPILOGO ORE SOTTO LA TABELLA MODIFICA
+        st.divider()
+        st.subheader("📊 Riepilogo Ore Mensili")
+        ore_calc = {m: 0.0 for m in st.session_state.medici}
+        for _, r in st.session_state.db_turni.iterrows():
+            if r["Pomeriggio"] in ore_calc: ore_calc[r["Pomeriggio"]] += calcola_durata(r["H_P"])
+            if r["Notte"] in ore_calc: ore_calc[r["Notte"]] += calcola_durata(r["H_N"])
+            if "/" in str(r["Mattina"]):
+                for p in r["Mattina"].split("/"):
+                    name = p.strip()
+                    if name in ore_calc: ore_calc[name] += (calcola_durata(r["H_M"]) / 2)
+            elif r["Mattina"] in ore_calc: ore_calc[r["Mattina"]] += calcola_durata(r["H_M"])
+        
+        df_ore = pd.DataFrame([{"Medico": m, "Ore Totali": round(h, 1)} for m, h in ore_calc.items()])
+        st.table(df_ore)
 
     with tab2:
         st.subheader("Simulazione Layout PDF")
@@ -241,16 +257,3 @@ if not st.session_state.db_turni.empty:
         
         st.divider()
         st.download_button("📥 SCARICA PDF FINALE", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
-
-    with tab3:
-        st.subheader("Conteggio Ore per Medico")
-        ore_calc = {m: 0.0 for m in st.session_state.medici}
-        for _, r in st.session_state.db_turni.iterrows():
-            if r["Pomeriggio"] in ore_calc: ore_calc[r["Pomeriggio"]] += calcola_durata(r["H_P"])
-            if r["Notte"] in ore_calc: ore_calc[r["Notte"]] += calcola_durata(r["H_N"])
-            if "/" in str(r["Mattina"]):
-                for p in r["Mattina"].split("/"):
-                    name = p.strip()
-                    if name in ore_calc: ore_calc[name] += (calcola_durata(r["H_M"]) / 2)
-            elif r["Mattina"] in ore_calc: ore_calc[r["Mattina"]] += calcola_durata(r["H_M"])
-        st.table(pd.DataFrame([{"Medico": m, "Ore Totali": f"{h:.1f}"} for m, h in ore_calc.items()]))
