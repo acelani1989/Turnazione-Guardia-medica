@@ -138,4 +138,82 @@ if st.button("🚀 GENERA PIANO TURNI", type="primary", use_container_width=True
         data_list.append({
             "Data": f"{d} {wd_nome}", "Tipo": tipo, "Descrizione": desc,
             "Mattina": mat_txt, "Pomeriggio": pom_m, "Notte": not_m,
-            "H_M": h_m, "H_P": h_p, "H_N
+            "H_M": h_m, "H_P": h_p, "H_N": h_n
+        })
+    st.session_state.db_turni = pd.DataFrame(data_list)
+
+# --- 8. TABELLONE PULITO & PDF ---
+if not st.session_state.db_turni.empty:
+    st.markdown("### 📝 Tabellone Turni (Modificabile)")
+    
+    lista_opzioni = ["---"] + st.session_state.medici
+    
+    # Visualizziamo solo le colonne importanti, nascondendo gli orari (H_M, H_P, H_N)
+    edited_db = st.data_editor(
+        st.session_state.db_turni[["Data", "Tipo", "Descrizione", "Mattina", "Pomeriggio", "Notte"]],
+        column_config={
+            "Mattina": st.column_config.SelectboxColumn("Mattina", options=lista_opzioni),
+            "Pomeriggio": st.column_config.SelectboxColumn("Pomeriggio", options=lista_opzioni),
+            "Notte": st.column_config.SelectboxColumn("Notte", options=lista_opzioni),
+            "Data": st.column_config.Column(disabled=True),
+            "Tipo": st.column_config.Column(disabled=True),
+            "Descrizione": st.column_config.Column(disabled=True),
+        },
+        use_container_width=True, hide_index=True, key="main_editor"
+    )
+    
+    # Ricalcolo Ore basato sui dati editati
+    ore_calc = {m: 0.0 for m in st.session_state.medici}
+    for i, r_mod in edited_db.iterrows():
+        r_orig = st.session_state.db_turni.iloc[i]
+        
+        if r_mod["Pomeriggio"] in ore_calc: 
+            ore_calc[r_mod["Pomeriggio"]] += calcola_durata(r_orig["H_P"])
+        if r_mod["Notte"] in ore_calc: 
+            ore_calc[r_mod["Notte"]] += calcola_durata(r_orig["H_N"])
+        if r_mod["Mattina"] != "---":
+            for p in str(r_mod["Mattina"]).split("/"):
+                p_c = p.strip()
+                if p_c in ore_calc: 
+                    divisore = 2 if "/" in str(r_mod["Mattina"]) else 1
+                    ore_calc[p_c] += (calcola_durata(r_orig["H_M"]) / divisore)
+
+    st.markdown("### 📊 Totale Ore")
+    df_ore = pd.DataFrame([{"Medico": m, "Ore": h} for m, h in ore_calc.items()])
+    # Tabella riepilogo ore modificabile se desiderato
+    st.data_editor(df_ore, use_container_width=True, hide_index=True, key="ore_summary_editor")
+
+    def genera_pdf():
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=landscape(A4))
+        elements = []
+        styles = getSampleStyleSheet()
+        elements.append(Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", styles['Title']))
+        
+        data_pdf = [["DATA", "TIPO / INFO", "MATTINA", "POMERIGGIO", "NOTTE"]]
+        row_colors = []
+        
+        for idx, r in edited_db.iterrows():
+            info = f"{r['Tipo']}\n{r['Descrizione']}" if r['Descrizione'] else r['Tipo']
+            r_orig = st.session_state.db_turni.iloc[idx]
+            m_t = f"{r['Mattina']}\n({r_orig['H_M']})" if r['Mattina'] != "---" else "---"
+            p_t = f"{r['Pomeriggio']}\n({r_orig['H_P']})" if r['Pomeriggio'] != "---" else "---"
+            n_t = f"{r['Notte']}\n({r_orig['H_N']})" if r['Notte'] != "---" else "---"
+            data_pdf.append([r["Data"], info, m_t, p_t, n_t])
+            
+            if r["Tipo"] == "Festivo": row_colors.append(('BACKGROUND', (0, idx+1), (-1, idx+1), colors.lightpink))
+            elif r["Tipo"] == "Prefestivo": row_colors.append(('BACKGROUND', (0, idx+1), (-1, idx+1), colors.lightyellow))
+        
+        t = Table(data_pdf, colWidths=[60, 110, 180, 180, 180])
+        t.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTSIZE', (0,0), (-1,-1), 8)
+        ] + row_colors))
+        elements.append(t)
+        doc.build(elements)
+        return buf.getvalue()
+
+    st.download_button("📥 SCARICA PDF COLORATO", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
