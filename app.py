@@ -130,4 +130,27 @@ with col1:
 with col2:
     st.markdown("<div class='settings-section'><b>🕒 PREFESTIVI</b>", unsafe_allow_html=True)
     p_p = st.text_input("Pomeriggio", value="10:00 - 20:00", key="kp_p")
-    p_n = st.text_input("Notte", value="20:0
+    p_n = st.text_input("Notte", value="20:00 - 08:00", key="kp_n")
+with col3:
+    st.markdown("<div class='settings-section'><b>🚩 FESTIVI</b>", unsafe_allow_html=True)
+    div_f = st.toggle("Dividi Mattina", value=True)
+    fes_m = st.text_input("Mattina", value="08:00 - 14:00", key="kf_m")
+    fes_p = st.text_input("Pomeriggio", value="14:00 - 20:00", key="kf_p")
+    fes_n = st.text_input("Notte", value="20:00 - 08:00", key="kf_n")
+
+# --- 6. LOGICA GENERAZIONE ---
+st.divider()
+if st.button("🚀 GENERA PIANO TURNI", type="primary", use_container_width=True):
+    gg_m = calendar.monthrange(anno_sel, m_idx_v)[1]
+    data_list = []
+    ultimo_notte = None 
+
+    for d in range(1, gg_m + 1):
+        dt = datetime(anno_sel, m_idx_v, d)
+        wd = dt.weekday()
+        
+        is_festivo_nazionale = (d, m_idx_v) in festivita_anno
+        is_prefestivo_speciale = (d == 24 and m_idx_v == 2)
+        
+        tipo = "Feriale"
+        if wd == 5 or is
