@@ -239,28 +239,32 @@ if not st.session_state.db_turni.empty:
             title_style.fontSize = 11
             elements = [Paragraph(f"GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", title_style), Spacer(1, 4)]
             
-            # Intestazione con orari
             data_pdf = [["GIORNO", "MATTINA", "POMERIGGIO", "NOTTE"]]
-            
-            for _, r in st.session_state.db_turni.iterrows():
-                # Formattazione riga: Nome Medico + (Orario) se presente
-                mat_info = f"{r['Mattina']}\n({r['H_M']})" if r['Mattina'] != "---" else "---"
-                pom_info = f"{r['Pomeriggio']}\n({r['H_P']})" if r['Pomeriggio'] != "---" else "---"
-                not_info = f"{r['Notte']}\n({r['H_N']})" if r['Notte'] != "---" else "---"
-                data_pdf.append([r["Data"], mat_info, pom_info, not_info])
-            
-            t = Table(data_pdf, colWidths=[3.0*cm, 5.7*cm, 5.7*cm, 5.7*cm], repeatRows=1)
-            t.setStyle(TableStyle([
+            table_styles = [
                 ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
                 ('FONTSIZE', (0,0), (-1,-1), 7.5),
                 ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
                 ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 1),
-                ('TOPPADDING', (0,0), (-1,-1), 1),
-            ]))
+            ]
+            
+            for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
+                row_idx = i + 1 # +1 perché c'è l'intestazione
+                mat_info = f"{r['Mattina']}\n({r['H_M']})" if r['Mattina'] != "---" else "---"
+                pom_info = f"{r['Pomeriggio']}\n({r['H_P']})" if r['Pomeriggio'] != "---" else "---"
+                not_info = f"{r['Notte']}\n({r['H_N']})" if r['Notte'] != "---" else "---"
+                data_pdf.append([r["Data"], mat_info, pom_info, not_info])
+                
+                # Applica colori di sfondo in base al tipo
+                if r["Tipo"] == "Festivo":
+                    table_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightpink))
+                elif r["Tipo"] == "Prefestivo":
+                    table_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightyellow))
+
+            t = Table(data_pdf, colWidths=[3.0*cm, 5.7*cm, 5.7*cm, 5.7*cm], repeatRows=1)
+            t.setStyle(TableStyle(table_styles))
             elements.append(t)
             doc.build(elements)
             return buf.getvalue()
-        st.download_button("📥 SCARICA PDF (ORARI INCLUSI)", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
+        st.download_button("📥 SCARICA PDF COLORATO", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
