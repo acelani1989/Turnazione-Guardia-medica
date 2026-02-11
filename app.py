@@ -16,8 +16,6 @@ st.markdown("""
     <style>
     .main-title { color: #1a365d; font-family: 'Helvetica', sans-serif; font-weight: 700; font-size: 2.3rem; border-bottom: 3px solid #63b3ed; padding-bottom: 10px; margin-bottom: 25px; }
     .settings-section { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    /* Stile per migliorare la leggibilità delle tabelle */
-    .stDataFrame { border-radius: 10px; overflow: hidden; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -149,4 +147,58 @@ if st.button("🚀 GENERA PIANO TURNI", type="primary", use_container_width=True
             pom_m = random.choice(disp_oggi)
             rest_n = [m for m in disp_notte if m != pom_m]
             not_m = random.choice(rest_n) if rest_n else random.choice(disp_notte)
-            h_p, h
+            h_p, h_n = p_p, p_n
+        else:
+            mat_txt, h_m = "---", "---"
+            pom_m, h_p = "---", "---"
+            not_m = random.choice(disp_notte)
+            h_n = f_n
+
+        ultimo_notte = not_m
+        data_list.append({
+            "Data": f"{d} {giorni_sett[wd]}", "Tipo": tipo, 
+            "Mattina": mat_txt, "Pomeriggio": pom_m, "Notte": not_m,
+            "H_M": h_m, "H_P": h_p, "H_N": h_n
+        })
+    st.session_state.db_turni = pd.DataFrame(data_list)
+
+# --- 7. TABELLONE E RIEPILOGO ORE ---
+if not st.session_state.db_turni.empty:
+    st.markdown("### 📅 Tabellone Risultante")
+    
+    lista_opzioni = ["---"] + st.session_state.medici
+    
+    edited_db = st.data_editor(
+        st.session_state.db_turni,
+        column_config={
+            "Data": st.column_config.Column("Giorno", width="small", disabled=True),
+            "Mattina": st.column_config.SelectboxColumn("☀️ Mattina", options=lista_opzioni),
+            "Pomeriggio": st.column_config.SelectboxColumn("🌤️ Pomeriggio", options=lista_opzioni),
+            "Notte": st.column_config.SelectboxColumn("🌙 Notte", options=lista_opzioni),
+            "Tipo": None, "H_M": None, "H_P": None, "H_N": None,
+        },
+        use_container_width=True,
+        hide_index=True,
+        key="main_table_editor"
+    )
+    
+    st.session_state.db_turni = edited_db
+
+    st.divider()
+    col_rec, col_down = st.columns([2, 1])
+    
+    with col_rec:
+        st.markdown("#### 📊 Riepilogo Ore Mensili")
+        ore_calc = {m: 0.0 for m in st.session_state.medici}
+        for _, r in st.session_state.db_turni.iterrows():
+            if r["Pomeriggio"] in ore_calc: ore_calc[r["Pomeriggio"]] += calcola_durata(r["H_P"])
+            if r["Notte"] in ore_calc: ore_calc[r["Notte"]] += calcola_durata(r["H_N"])
+            
+            if "/" in str(r["Mattina"]):
+                for p in r["Mattina"].split("/"):
+                    p_c = p.strip()
+                    if p_c in ore_calc: ore_calc[p_c] += (calcola_durata(r["H_M"]) / 2)
+            elif r["Mattina"] in ore_calc:
+                ore_calc[r["Mattina"]] += calcola_durata(r["H_M"])
+
+        df_ore = pd.DataFrame([{"Medico": m, "Ore Totali": f"{
