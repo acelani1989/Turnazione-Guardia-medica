@@ -18,7 +18,6 @@ st.markdown("""
     <style>
     .main-title { color: #1a365d; font-family: 'Helvetica', sans-serif; font-weight: 700; font-size: 2.3rem; border-bottom: 3px solid #63b3ed; padding-bottom: 10px; margin-bottom: 25px; }
     .settings-section { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .preview-box { border: 2px solid #cbd5e0; padding: 20px; background-color: white; border-radius: 5px; font-family: 'Courier New', monospace; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -128,10 +127,10 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
         dt = datetime(anno_sel, m_idx_v, d)
         wd = dt.weekday()
         is_festivo_nazionale = (d, m_idx_v) in festivita_anno
-        is_prefestivo_speciale = (d == 24 and m_idx_v == 2)
         tipo = "Feriale"
-        if wd == 5 or is_prefestivo_speciale: tipo = "Prefestivo"
+        if wd == 5 or (d == 24 and m_idx_v == 2): tipo = "Prefestivo"
         if wd == 6 or is_festivo_nazionale: tipo = "Festivo"
+        
         nome_fest = f" ({festivita_anno[(d, m_idx_v)]})" if is_festivo_nazionale else ""
         disp_oggi = [m for m in st.session_state.medici if d not in st.session_state.assenze.get(m, [])]
         if not disp_oggi: disp_oggi = st.session_state.medici
@@ -153,10 +152,8 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
             not_m = random.choice(rest_n) if rest_n else random.choice(disp_notte)
             h_p, h_n = p_p, p_n
         else:
-            mat_txt, h_m = "---", "---"
-            pom_m, h_p = "---", "---"
-            not_m = random.choice(disp_notte)
-            h_n = f_n
+            mat_txt, h_m, pom_m, h_p = "---", "---", "---", "---"
+            not_m, h_n = random.choice(disp_notte), f_n
 
         ultimo_notte = not_m
         data_list.append({"Data": f"{d} {giorni_sett[wd]}{nome_fest}", "Tipo": tipo, "Mattina": mat_txt, "Pomeriggio": pom_m, "Notte": not_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
@@ -167,7 +164,7 @@ if not st.session_state.db_turni.empty:
     tab1, tab2 = st.tabs(["📝 Modifica Dati", "👁️ Anteprima PDF"])
     
     with tab1:
-        st.info("Modifica i nomi direttamente nella tabella qui sotto se necessario.")
+        st.info("Modifica i nomi nella tabella se necessario.")
         lista_opzioni = ["---"] + st.session_state.medici
         st.session_state.db_turni = st.data_editor(st.session_state.db_turni, column_config={
             "Data": st.column_config.Column("Giorno", disabled=True),
@@ -179,29 +176,35 @@ if not st.session_state.db_turni.empty:
 
     with tab2:
         st.subheader("Anteprima Layout Finale")
-        # Creazione anteprima visiva stilizzata
+        
+        # FUNZIONE CORRETTA: Accede a 'Tipo' perché presente nell'oggetto row
         def style_row(row):
-            if row.Tipo == "Festivo": return ['background-color: #ffebee'] * len(row)
-            if row.Tipo == "Prefestivo": return ['background-color: #fffde7'] * len(row)
+            if row['Tipo'] == "Festivo": return ['background-color: #ffebee'] * len(row)
+            if row['Tipo'] == "Prefestivo": return ['background-color: #fffde7'] * len(row)
             return [''] * len(row)
         
         preview_df = st.session_state.db_turni.copy()
+        # Formattazione per la visualizzazione
         preview_df['Mattina'] = preview_df.apply(lambda r: f"{r.Mattina} ({r.H_M})" if r.Mattina != "---" else "---", axis=1)
         preview_df['Pomeriggio'] = preview_df.apply(lambda r: f"{r.Pomeriggio} ({r.H_P})" if r.Pomeriggio != "---" else "---", axis=1)
         preview_df['Notte'] = preview_df.apply(lambda r: f"{r.Notte} ({r.H_N})" if r.Notte != "---" else "---", axis=1)
         
-        st.dataframe(preview_df[['Data', 'Mattina', 'Pomeriggio', 'Notte']].style.apply(style_row, axis=1), use_container_width=True, hide_index=True)
+        # Visualizzazione con colonne filtrate dopo l'applicazione dello stile
+        cols_to_show = ['Data', 'Mattina', 'Pomeriggio', 'Notte']
+        st.dataframe(
+            preview_df.style.apply(style_row, axis=1).subset(cols_to_show), 
+            use_container_width=True, 
+            hide_index=True
+        )
 
         def genera_pdf():
             buf = io.BytesIO()
             doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.4*cm, bottomMargin=0.4*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
             styles = getSampleStyleSheet()
-            title_style = styles['Title']
-            title_style.fontSize = 10
-            elements = [Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", title_style), Spacer(1, 2)]
+            elements = [Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", styles['Title']), Spacer(1, 2)]
             
             data_pdf = [["GIORNO", "MATTINA", "POMERIGGIO", "NOTTE"]]
-            table_styles = [
+            t_styles = [
                 ('GRID', (0,0), (-1,-1), 0.3, colors.grey), ('FONTSIZE', (0,0), (-1,-1), 7.0),
                 ('LEADING', (0,0), (-1,-1), 8.5), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke), ('ALIGN', (0,0), (-1,-1), 'CENTER'),
@@ -213,13 +216,13 @@ if not st.session_state.db_turni.empty:
                 p_inf = f"{r['Pomeriggio']}\n{r['H_P']}" if r['Pomeriggio'] != "---" else "---"
                 n_inf = f"{r['Notte']}\n{r['H_N']}" if r['Notte'] != "---" else "---"
                 data_pdf.append([r["Data"], m_inf, p_inf, n_inf])
-                if r["Tipo"] == "Festivo": table_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightpink))
-                elif r["Tipo"] == "Prefestivo": table_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightyellow))
+                if r["Tipo"] == "Festivo": t_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightpink))
+                elif r["Tipo"] == "Prefestivo": t_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightyellow))
             
             t = Table(data_pdf, colWidths=[3.2*cm, 5.7*cm, 5.7*cm, 5.7*cm])
-            t.setStyle(TableStyle(table_styles))
+            t.setStyle(TableStyle(t_styles))
             elements.append(t)
             doc.build(elements)
             return buf.getvalue()
 
-        st.download_button("📥 SCARICA PDF (PAGINA SINGOLA)", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
+        st.download_button("📥 SCARICA PDF", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
