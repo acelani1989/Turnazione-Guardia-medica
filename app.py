@@ -3,6 +3,7 @@ import pandas as pd
 import calendar
 import random
 import io
+import json
 from datetime import datetime
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
@@ -22,7 +23,6 @@ st.markdown("""
 
 # --- 2. FUNZIONI UTILI ---
 def get_festivita(anno):
-    """Calcola festività nazionali e religiose mobili (Pasqua)"""
     def calcola_pasqua(y):
         a = y % 19
         b = y // 100
@@ -42,8 +42,6 @@ def get_festivita(anno):
 
     g_p, m_p = calcola_pasqua(anno)
     dt_p = datetime(anno, m_p, g_p)
-    
-    # Calcolo Lunedì dell'Angelo (Pasquetta)
     if g_p == calendar.monthrange(anno, m_p)[1]:
         dt_pp = datetime(anno, m_p + 1, 1)
     else:
@@ -100,6 +98,7 @@ with st.sidebar:
         c_n.write(f"**{med}**")
         if c_d.button("X", key=f"del_{med}"):
             st.session_state.medici.remove(med)
+            if med in st.session_state.assenze: del st.session_state.assenze[med]
             st.rerun()
     
     st.divider()
@@ -129,6 +128,25 @@ with st.sidebar:
                     else: st.session_state.assenze[m_sel].append(day)
                     st.rerun()
 
+    st.divider()
+    st.markdown("### 💾 Backup Dati")
+    # Export
+    backup_data = {"medici": st.session_state.medici, "assenze": st.session_state.assenze}
+    json_str = json.dumps(backup_data)
+    st.download_button("ESPORTA BACKUP", data=json_str, file_name="backup_guardia_medica.json", mime="application/json", use_container_width=True)
+    
+    # Import
+    uploaded_file = st.file_uploader("IMPORTA BACKUP", type="json")
+    if uploaded_file is not None:
+        try:
+            data = json.load(uploaded_file)
+            st.session_state.medici = data["medici"]
+            st.session_state.assenze = data["assenze"]
+            st.success("Backup caricato!")
+            st.rerun()
+        except:
+            st.error("Errore nel file.")
+
 # --- 5. DASHBOARD ORARI ---
 st.markdown(f"<div class='main-title'>Gestione Turni: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
 
@@ -157,7 +175,6 @@ if st.button("🚀 GENERA PIANO TURNI", type="primary", use_container_width=True
     for d in range(1, gg_m + 1):
         dt = datetime(anno_sel, m_idx_v, d)
         wd = dt.weekday()
-        
         is_festivo_nazionale = (d, m_idx_v) in festivita_anno
         is_prefestivo_speciale = (d == 24 and m_idx_v == 2)
         
@@ -166,10 +183,8 @@ if st.button("🚀 GENERA PIANO TURNI", type="primary", use_container_width=True
         if wd == 6 or is_festivo_nazionale: tipo = "Festivo"
         
         nome_fest = f" ({festivita_anno[(d, m_idx_v)]})" if is_festivo_nazionale else ""
-        
         disp_oggi = [m for m in st.session_state.medici if d not in st.session_state.assenze.get(m, [])]
         if not disp_oggi: disp_oggi = st.session_state.medici
-        
         disp_notte = [m for m in disp_oggi if m != ultimo_notte]
         if not disp_notte: disp_notte = disp_oggi
 
