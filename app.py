@@ -62,8 +62,23 @@ if 'medici' not in st.session_state: st.session_state.medici = ["Piscopo", "Cela
 if 'assenze' not in st.session_state: st.session_state.assenze = {m: [] for m in st.session_state.medici}
 if 'db_turni' not in st.session_state: st.session_state.db_turni = pd.DataFrame()
 
-# --- 4. SIDEBAR ---
+# --- 4. SIDEBAR (CONTROLLI E BACKUP) ---
 with st.sidebar:
+    st.markdown("## ⚙️ Gestione Dati")
+    
+    # IMPORTAZIONE BACKUP
+    uploaded_file = st.file_uploader("📂 Importa Backup (JSON)", type="json")
+    if uploaded_file is not None:
+        try:
+            data = json.load(uploaded_file)
+            st.session_state.medici = data["medici"]
+            # Convertiamo le chiavi delle assenze perché JSON le trasforma in stringhe
+            st.session_state.assenze = {m: list(map(int, d)) for m, d in data["assenze"].items()}
+            st.success("Dati caricati!")
+        except Exception as e:
+            st.error(f"Errore caricamento: {e}")
+
+    st.divider()
     st.markdown("## 📅 Periodo")
     anno_sel = st.number_input("Anno:", min_value=2024, max_value=2030, value=2026)
     mesi_ita = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
@@ -104,7 +119,7 @@ with st.sidebar:
 
     st.divider()
     data_to_save = {"medici": st.session_state.medici, "assenze": st.session_state.assenze}
-    st.download_button("📥 ESPORTA BACKUP (JSON)", data=json.dumps(data_to_save), file_name="backup.json", use_container_width=True)
+    st.download_button("📥 ESPORTA BACKUP (JSON)", data=json.dumps(data_to_save), file_name="backup_medici.json", use_container_width=True)
 
 # --- 5. INTERFACCIA PRINCIPALE ---
 st.markdown(f"<div class='main-title'>Gestione Turni: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
@@ -168,7 +183,7 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
         data_list.append({"Data": f"{d} {giorni_sett[wd]}{nome_fest}", "Tipo": tipo, "Mattina": mat_txt, "Pomeriggio": pom_m, "Notte": not_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
     st.session_state.db_turni = pd.DataFrame(data_list)
 
-# --- 7. TABELLA, RIEPILOGO E DOWNLOAD ---
+# --- 7. TABELLA, ANTEPRIMA E RIEPILOGO ---
 if not st.session_state.db_turni.empty:
     tab1, tab2, tab3 = st.tabs(["📝 Modifica Dati", "👁️ Anteprima Grafica", "📊 Riepilogo Ore"])
     
@@ -183,7 +198,7 @@ if not st.session_state.db_turni.empty:
         }, use_container_width=True, hide_index=True)
 
     with tab2:
-        st.subheader("Simulazione Foglio PDF")
+        st.subheader("Simulazione Layout PDF")
         def style_row(row):
             if row['Tipo'] == "Festivo": return ['background-color: #ffebee'] * len(row)
             if row['Tipo'] == "Prefestivo": return ['background-color: #fffde7'] * len(row)
@@ -224,6 +239,7 @@ if not st.session_state.db_turni.empty:
             if r["Notte"] in ore_calc: ore_calc[r["Notte"]] += calcola_durata(r["H_N"])
             if "/" in str(r["Mattina"]):
                 for p in r["Mattina"].split("/"):
-                    if p.strip() in ore_calc: ore_calc[p.strip()] += (calcola_durata(r["H_M"]) / 2)
+                    name = p.strip()
+                    if name in ore_calc: ore_calc[name] += (calcola_durata(r["H_M"]) / 2)
             elif r["Mattina"] in ore_calc: ore_calc[r["Mattina"]] += calcola_durata(r["H_M"])
-        st.dataframe(pd.DataFrame([{"Medico": m, "Ore": f"{h:.1f}"} for m, h in ore_calc.items()]), hide_index=True)
+        st.table(pd.DataFrame([{"Medico": m, "Ore Totali": f"{h:.1f}"} for m, h in ore_calc.items()]))
