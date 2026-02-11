@@ -177,23 +177,24 @@ if not st.session_state.db_turni.empty:
     with tab2:
         st.subheader("Anteprima Layout Finale")
         
-        # FUNZIONE CORRETTA: Accede a 'Tipo' perché presente nell'oggetto row
+        # FIX DEFINITIVO PER LO STYLER
         def style_row(row):
-            if row['Tipo'] == "Festivo": return ['background-color: #ffebee'] * len(row)
-            if row['Tipo'] == "Prefestivo": return ['background-color: #fffde7'] * len(row)
-            return [''] * len(row)
+            color = ''
+            if row['Tipo'] == "Festivo": color = 'background-color: #ffebee'
+            elif row['Tipo'] == "Prefestivo": color = 'background-color: #fffde7'
+            return [color] * len(row)
         
+        # Prepariamo i dati per la visualizzazione
         preview_df = st.session_state.db_turni.copy()
-        # Formattazione per la visualizzazione
         preview_df['Mattina'] = preview_df.apply(lambda r: f"{r.Mattina} ({r.H_M})" if r.Mattina != "---" else "---", axis=1)
         preview_df['Pomeriggio'] = preview_df.apply(lambda r: f"{r.Pomeriggio} ({r.H_P})" if r.Pomeriggio != "---" else "---", axis=1)
         preview_df['Notte'] = preview_df.apply(lambda r: f"{r.Notte} ({r.H_N})" if r.Notte != "---" else "---", axis=1)
         
-        # Visualizzazione con colonne filtrate dopo l'applicazione dello stile
-        cols_to_show = ['Data', 'Mattina', 'Pomeriggio', 'Notte']
+        # Mostriamo lo styler nascondendo le colonne tecniche tramite column_order
         st.dataframe(
-            preview_df.style.apply(style_row, axis=1).subset(cols_to_show), 
-            use_container_width=True, 
+            preview_df.style.apply(style_row, axis=1),
+            column_order=("Data", "Mattina", "Pomeriggio", "Notte"),
+            use_container_width=True,
             hide_index=True
         )
 
