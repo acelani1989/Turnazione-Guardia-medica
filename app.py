@@ -233,26 +233,34 @@ if not st.session_state.db_turni.empty:
     with col_down:
         def genera_pdf():
             buf = io.BytesIO()
-            doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.5*cm, bottomMargin=0.5*cm, leftMargin=0.5*cm, rightMargin=0.5*cm)
+            doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.4*cm, bottomMargin=0.4*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
             styles = getSampleStyleSheet()
             title_style = styles['Title']
-            title_style.fontSize = 11  # Titolo più piccolo
+            title_style.fontSize = 11
             elements = [Paragraph(f"GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", title_style), Spacer(1, 4)]
-            data_pdf = [["GIORNO", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
+            
+            # Intestazione con orari
+            data_pdf = [["GIORNO", "MATTINA", "POMERIGGIO", "NOTTE"]]
+            
             for _, r in st.session_state.db_turni.iterrows():
-                data_pdf.append([r["Data"], r["Tipo"], r["Mattina"], r["Pomeriggio"], r["Notte"]])
-            t = Table(data_pdf, colWidths=[2.5*cm, 2.2*cm, 5.1*cm, 5.1*cm, 5.1*cm], repeatRows=1)
+                # Formattazione riga: Nome Medico + (Orario) se presente
+                mat_info = f"{r['Mattina']}\n({r['H_M']})" if r['Mattina'] != "---" else "---"
+                pom_info = f"{r['Pomeriggio']}\n({r['H_P']})" if r['Pomeriggio'] != "---" else "---"
+                not_info = f"{r['Notte']}\n({r['H_N']})" if r['Notte'] != "---" else "---"
+                data_pdf.append([r["Data"], mat_info, pom_info, not_info])
+            
+            t = Table(data_pdf, colWidths=[3.0*cm, 5.7*cm, 5.7*cm, 5.7*cm], repeatRows=1)
             t.setStyle(TableStyle([
                 ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                ('FONTSIZE', (0,0), (-1,-1), 8),
+                ('FONTSIZE', (0,0), (-1,-1), 7.5),
                 ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
                 ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 2),
-                ('TOPPADDING', (0,0), (-1,-1), 2),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+                ('TOPPADDING', (0,0), (-1,-1), 1),
             ]))
             elements.append(t)
             doc.build(elements)
             return buf.getvalue()
-        st.download_button("📥 SCARICA PDF (UNA PAGINA)", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
+        st.download_button("📥 SCARICA PDF (ORARI INCLUSI)", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
