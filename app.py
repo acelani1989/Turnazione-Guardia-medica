@@ -142,40 +142,4 @@ if st.button("🚀 GENERA PIANO TURNI", type="primary", use_container_width=True
         if not disp_notte: disp_notte = disp_oggi if disp_oggi else st.session_state.medici
 
         if tipo == "Festivo":
-            m_mat_list = random.sample(disp_oggi, min(2, len(disp_oggi))) if div_f else [random.choice(disp_oggi)]
-            mat_txt = " / ".join(m_mat_list)
-            rest_p = [m for m in disp_oggi if m not in m_mat_list]
-            pom_m = random.choice(rest_p) if rest_p else random.choice(disp_oggi)
-            rest_n = [m for m in disp_notte if m != pom_m and m not in m_mat_list]
-            not_m = random.choice(rest_n) if rest_n else random.choice(disp_notte)
-            h_m, h_p, h_n = fes_m, fes_p, fes_n
-        elif tipo == "Prefestivo":
-            mat_txt, h_m = "---", "---"
-            pom_m = random.choice(disp_oggi)
-            rest_n = [m for m in disp_notte if m != pom_m]
-            not_m = random.choice(rest_n) if rest_n else random.choice(disp_notte)
-            h_p, h_n = p_p, p_n
-        else:
-            mat_txt, h_m = "---", "---"
-            pom_m, h_p = "---", "---"
-            not_m = random.choice(disp_notte)
-            h_n = f_n
-
-        ultimo_notte = not_m
-        data_list.append({
-            "Data": f"{d} {wd_nome}", 
-            "Tipo": tipo, 
-            "Descrizione": desc,
-            "Mattina": mat_txt, 
-            "Pomeriggio": pom_m, 
-            "Notte": not_m,
-            "H_M": h_m, 
-            "H_P": h_p, 
-            "H_N": h_n
-        })
-    st.session_state.db_turni = pd.DataFrame(data_list)
-
-# --- 8. TABELLONE MAGNIFICO ---
-if not st.session_state.db_turni.empty:
-    st.markdown("### 📝 Vista Colorata")
-    def style_row(row):
+            m_mat_list = random.sample(disp
