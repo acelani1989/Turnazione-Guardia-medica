@@ -22,7 +22,6 @@ st.markdown("""
 
 # --- 2. FUNZIONI UTILI ---
 def get_festivita(anno):
-    """Ritorna un dizionario con le festività nazionali italiane + Patrono"""
     def pasqua(y):
         a, b, c = y % 19, y // 100, y % 100
         d, e, f = b // 4, b % 4, (b + 8) // 25
@@ -36,21 +35,19 @@ def get_festivita(anno):
 
     g_p, m_p = pasqua(anno)
     dt_p = datetime(anno, m_p, g_p)
-    # Calcolo Pasquetta in modo sicuro
     try:
         dt_pp = dt_p.replace(day=g_p+1)
     except ValueError:
         dt_pp = datetime(anno, m_p+1, 1)
 
-    fest = {
+    return {
         (1, 1): "Capodanno", (6, 1): "Epifania",
         (25, 4): "Liberazione", (1, 5): "Festa Lavoro", (2, 6): "Festa Repubblica",
         (15, 8): "Ferragosto", (1, 11): "Ognissanti", (8, 12): "Immacolata",
         (25, 12): "Natale", (26, 12): "S. Stefano",
         (dt_p.day, dt_p.month): "Pasqua", (dt_pp.day, dt_pp.month): "Pasquetta",
-        (25, 2): "S. Patrono" # Aggiunto Santo Patrono
+        (25, 2): "S. Patrono"
     }
-    return fest
 
 def calcola_durata(intervallo):
     try:
@@ -104,4 +101,33 @@ with st.sidebar:
     giorni_sett = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
     cols_scor = st.columns(4)
     for i, g_nome in enumerate(giorni_sett):
-        if cols_scor[i %
+        if cols_scor[i % 4].button(g_nome, key=f"btn_{g_nome}"):
+            for d in range(1, 32):
+                try:
+                    if datetime(anno_sel, m_idx_v, d).weekday() == i:
+                        if d not in st.session_state.assenze[m_sel]: st.session_state.assenze[m_sel].append(d)
+                except: pass
+            st.rerun()
+    
+    cal = calendar.monthcalendar(anno_sel, m_idx_v)
+    for week in cal:
+        cols = st.columns(7)
+        for i, day in enumerate(week):
+            if day != 0:
+                is_abs = day in st.session_state.assenze.get(m_sel, [])
+                if cols[i].button(str(day), key=f"d_btn_{day}", type="primary" if is_abs else "secondary"):
+                    if is_abs: st.session_state.assenze[m_sel].remove(day)
+                    else: st.session_state.assenze[m_sel].append(day)
+                    st.rerun()
+
+# --- 5. DASHBOARD ORARI ---
+st.markdown(f"<div class='main-title'>Gestione Turni: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.markdown("<div class='settings-section'><b>🏠 FERIALI</b>", unsafe_allow_html=True)
+    f_n = st.text_input("Notte", value="20:00 - 08:00")
+with col2:
+    st.markdown("<div class='settings-section'><b>🕒 PREFESTIVI</b>", unsafe_allow_html=True)
+    p_p = st.text_input("Pomeriggio", value="10:00 - 20:00", key="kp_p")
+    p_n = st.text_input("Notte", value="20:0
