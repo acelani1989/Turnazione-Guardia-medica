@@ -22,23 +22,32 @@ st.markdown("""
 
 # --- 2. FUNZIONI UTILI ---
 def get_festivita(anno):
-    def pasqua(y):
-        a, b, c = y % 19, y // 100, y % 100
-        d, e, f = b // 4, b % 4, (b + 8) // 25
-        g, h = (b - f + 1) // 3, (19 * a + b - d - g + 15) % 30
-        i, k = c // 4, c % 4
+    """Calcola festività nazionali e religiose mobili (Pasqua)"""
+    def calcola_pasqua(y):
+        a = y % 19
+        b = y // 100
+        c = y % 100
+        d = b // 4
+        e = b % 4
+        f = (b + 8) // 25
+        g = (b - f + 1) // 3
+        h = (19 * a + b - d - g + 15) % 30
+        i = c // 4
+        k = c % 4
         l = (32 + 2 * e + 2 * i - h - k) % 7
         m = (a + 11 * h + 22 * l) // 451
         mese = (h + l - 7 * m + 114) // 31
         giorno = ((h + l - 7 * m + 114) % 31) + 1
         return giorno, mese
 
-    g_p, m_p = pasqua(anno)
+    g_p, m_p = calcola_pasqua(anno)
     dt_p = datetime(anno, m_p, g_p)
-    try:
-        dt_pp = dt_p.replace(day=g_p+1)
-    except ValueError:
-        dt_pp = datetime(anno, m_p+1, 1)
+    
+    # Calcolo Lunedì dell'Angelo (Pasquetta)
+    if g_p == calendar.monthrange(anno, m_p)[1]:
+        dt_pp = datetime(anno, m_p + 1, 1)
+    else:
+        dt_pp = datetime(anno, m_p, g_p + 1)
 
     return {
         (1, 1): "Capodanno", (6, 1): "Epifania",
