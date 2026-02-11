@@ -233,38 +233,41 @@ if not st.session_state.db_turni.empty:
     with col_down:
         def genera_pdf():
             buf = io.BytesIO()
-            doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.4*cm, bottomMargin=0.4*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
+            # Margini minimizzati a 0.3cm
+            doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.3*cm, bottomMargin=0.3*cm, leftMargin=0.3*cm, rightMargin=0.3*cm)
             styles = getSampleStyleSheet()
             title_style = styles['Title']
-            title_style.fontSize = 11
-            elements = [Paragraph(f"GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", title_style), Spacer(1, 4)]
+            title_style.fontSize = 10
+            elements = [Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", title_style), Spacer(1, 2)]
             
             data_pdf = [["GIORNO", "MATTINA", "POMERIGGIO", "NOTTE"]]
             table_styles = [
-                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                ('FONTSIZE', (0,0), (-1,-1), 7.5),
+                ('GRID', (0,0), (-1,-1), 0.3, colors.grey),
+                ('FONTSIZE', (0,0), (-1,-1), 7.0), # Font ultra-compatto
+                ('LEADING', (0,0), (-1,-1), 8.5), # Interlinea stretta
                 ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
                 ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 0.5), # Spazio minimo
+                ('TOPPADDING', (0,0), (-1,-1), 0.5),
             ]
             
             for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
-                row_idx = i + 1 # +1 perché c'è l'intestazione
-                mat_info = f"{r['Mattina']}\n({r['H_M']})" if r['Mattina'] != "---" else "---"
-                pom_info = f"{r['Pomeriggio']}\n({r['H_P']})" if r['Pomeriggio'] != "---" else "---"
-                not_info = f"{r['Notte']}\n({r['H_N']})" if r['Notte'] != "---" else "---"
+                row_idx = i + 1
+                mat_info = f"{r['Mattina']}\n{r['H_M']}" if r['Mattina'] != "---" else "---"
+                pom_info = f"{r['Pomeriggio']}\n{r['H_P']}" if r['Pomeriggio'] != "---" else "---"
+                not_info = f"{r['Notte']}\n{r['H_N']}" if r['Notte'] != "---" else "---"
                 data_pdf.append([r["Data"], mat_info, pom_info, not_info])
                 
-                # Applica colori di sfondo in base al tipo
                 if r["Tipo"] == "Festivo":
                     table_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightpink))
                 elif r["Tipo"] == "Prefestivo":
                     table_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightyellow))
 
-            t = Table(data_pdf, colWidths=[3.0*cm, 5.7*cm, 5.7*cm, 5.7*cm], repeatRows=1)
+            t = Table(data_pdf, colWidths=[3.2*cm, 5.7*cm, 5.7*cm, 5.7*cm], repeatRows=1)
             t.setStyle(TableStyle(table_styles))
             elements.append(t)
             doc.build(elements)
             return buf.getvalue()
-        st.download_button("📥 SCARICA PDF COLORATO", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
+        st.download_button("📥 SCARICA PDF COMPATTO (1 PAGINA)", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
