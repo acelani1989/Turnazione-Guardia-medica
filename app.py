@@ -130,11 +130,12 @@ if st.button("🚀 GENERA PIANO TURNI", type="primary", use_container_width=True
     gg_m = calendar.monthrange(anno_sel, m_idx_v)[1]
     data_list = []
     ultimo_notte = None 
+    g_sett_lista = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
 
     for d in range(1, gg_m + 1):
         dt = datetime(anno_sel, m_idx_v, d)
         tipo, desc = get_info_giorno(dt)
-        wd_nome = g_sett[dt.weekday()]
+        wd_nome = g_sett_lista[dt.weekday()]
         
         disp_oggi = [m for m in st.session_state.medici if d not in st.session_state.assenze.get(m, [])]
         disp_notte = [m for m in disp_oggi if m != ultimo_notte]
@@ -162,6 +163,19 @@ if st.button("🚀 GENERA PIANO TURNI", type="primary", use_container_width=True
 
         ultimo_notte = not_m
         data_list.append({
-            "Data": f"{d} {wd_nome}", "Tipo": tipo, "Descrizione": desc,
-            "Mattina": mat_txt, "Pomeriggio": pom_m, "Notte": not_m,
-            "H_M": h_m, "H_P": h_p, "H_N": h_n
+            "Data": f"{d} {wd_nome}", 
+            "Tipo": tipo, 
+            "Descrizione": desc,
+            "Mattina": mat_txt, 
+            "Pomeriggio": pom_m, 
+            "Notte": not_m,
+            "H_M": h_m, 
+            "H_P": h_p, 
+            "H_N": h_n
+        })
+    st.session_state.db_turni = pd.DataFrame(data_list)
+
+# --- 8. TABELLONE MAGNIFICO ---
+if not st.session_state.db_turni.empty:
+    st.markdown("### 📝 Vista Colorata")
+    def style_row(row):
