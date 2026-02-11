@@ -207,7 +207,7 @@ if not st.session_state.db_turni.empty:
             "Tipo": None, "H_M": None, "H_P": None, "H_N": None,
         }, use_container_width=True, hide_index=True)
 
-        # RIEPILOGO ORE SOTTO LA TABELLA MODIFICA
+        # RIEPILOGO ORE SENZA VIRGOLA (INT)
         st.divider()
         st.subheader("📊 Riepilogo Ore Mensili")
         ore_calc = {m: 0.0 for m in st.session_state.medici}
@@ -220,7 +220,8 @@ if not st.session_state.db_turni.empty:
                     if name in ore_calc: ore_calc[name] += (calcola_durata(r["H_M"]) / 2)
             elif r["Mattina"] in ore_calc: ore_calc[r["Mattina"]] += calcola_durata(r["H_M"])
         
-        df_ore = pd.DataFrame([{"Medico": m, "Ore Totali": round(h, 1)} for m, h in ore_calc.items()])
+        # Trasformazione in intero per rimuovere la virgola
+        df_ore = pd.DataFrame([{"Medico": m, "Ore Totali": int(round(h, 0))} for m, h in ore_calc.items()])
         st.table(df_ore)
 
     with tab2:
