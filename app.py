@@ -4,6 +4,7 @@ import calendar
 import random
 import io
 import json
+import base64
 from datetime import datetime
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -45,17 +46,6 @@ def get_festivita(anno):
         (8, 12): "Immacolata", (25, 12): "Natale", (26, 12): "S. Stefano",
         (dt_p.day, dt_p.month): "Pasqua", (dt_pp.day, dt_pp.month): "Pasquetta", (25, 2): "S. Patrono"
     }
-
-def calcola_durata(intervallo):
-    try:
-        if "---" in str(intervallo) or not intervallo: return 0
-        parti = intervallo.split("-")
-        inizio = datetime.strptime(parti[0].strip(), "%H:%M")
-        fine = datetime.strptime(parti[1].strip(), "%H:%M")
-        durata = (fine - inizio).seconds / 3600
-        if durata <= 0: durata += 24 
-        return durata
-    except: return 0
 
 # --- 3. STATO SESSIONE ---
 if 'medici' not in st.session_state: st.session_state.medici = ["Piscopo", "Celani", "Lombardo", "Siracusa"]
@@ -161,7 +151,7 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
 
 # --- 7. ANTEPRIMA E DOWNLOAD ---
 if not st.session_state.db_turni.empty:
-    tab1, tab2 = st.tabs(["📝 Modifica Dati", "👁️ Anteprima PDF"])
+    tab1, tab2 = st.tabs(["📝 Modifica Dati", "👁️ Anteprima Foglio PDF"])
     
     with tab1:
         st.info("Modifica i nomi nella tabella se necessario.")
@@ -175,31 +165,9 @@ if not st.session_state.db_turni.empty:
         }, use_container_width=True, hide_index=True)
 
     with tab2:
-        st.subheader("Anteprima Layout Finale")
-        
-        # FIX DEFINITIVO PER LO STYLER
-        def style_row(row):
-            color = ''
-            if row['Tipo'] == "Festivo": color = 'background-color: #ffebee'
-            elif row['Tipo'] == "Prefestivo": color = 'background-color: #fffde7'
-            return [color] * len(row)
-        
-        # Prepariamo i dati per la visualizzazione
-        preview_df = st.session_state.db_turni.copy()
-        preview_df['Mattina'] = preview_df.apply(lambda r: f"{r.Mattina} ({r.H_M})" if r.Mattina != "---" else "---", axis=1)
-        preview_df['Pomeriggio'] = preview_df.apply(lambda r: f"{r.Pomeriggio} ({r.H_P})" if r.Pomeriggio != "---" else "---", axis=1)
-        preview_df['Notte'] = preview_df.apply(lambda r: f"{r.Notte} ({r.H_N})" if r.Notte != "---" else "---", axis=1)
-        
-        # Mostriamo lo styler nascondendo le colonne tecniche tramite column_order
-        st.dataframe(
-            preview_df.style.apply(style_row, axis=1),
-            column_order=("Data", "Mattina", "Pomeriggio", "Notte"),
-            use_container_width=True,
-            hide_index=True
-        )
-
-        def genera_pdf():
+        def genera_pdf_bytes():
             buf = io.BytesIO()
+            # Margini minimizzati per stare in una pagina
             doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.4*cm, bottomMargin=0.4*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
             styles = getSampleStyleSheet()
             elements = [Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", styles['Title']), Spacer(1, 2)]
@@ -226,4 +194,16 @@ if not st.session_state.db_turni.empty:
             doc.build(elements)
             return buf.getvalue()
 
-        st.download_button("📥 SCARICA PDF", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
+        # Genera il PDF
+        pdf_data = genera_pdf_bytes()
+        
+        # Codifica per l'Iframe
+        base64_pdf = base64.b64encode(pdf_data).decode('utf-8')
+        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+        
+        # Visualizzazione
+        st.markdown("### Anteprima Documento")
+        st.markdown(pdf_display, unsafe_allow_html=True)
+        
+        st.divider()
+        st.download_button("📥 SCARICA PDF FINALE", data=pdf_data, file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
