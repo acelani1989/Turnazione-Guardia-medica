@@ -12,7 +12,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 
-# --- 1. CONFIGURAZIONE ---
+# --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="Master Guardia Medica", layout="wide")
 
 st.markdown("""
@@ -22,7 +22,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. FUNZIONI UTILI ---
+# --- 2. FUNZIONI LOGICHE ---
 def get_festivita(anno):
     def calcola_pasqua(y):
         a, b, c = y % 19, y // 100, y % 100
@@ -47,12 +47,23 @@ def get_festivita(anno):
         (dt_p.day, dt_p.month): "Pasqua", (dt_pp.day, dt_pp.month): "Pasquetta", (25, 2): "S. Patrono"
     }
 
-# --- 3. STATO SESSIONE ---
+def calcola_durata(intervallo):
+    try:
+        if "---" in str(intervallo) or not intervallo: return 0
+        parti = intervallo.split("-")
+        inizio = datetime.strptime(parti[0].strip(), "%H:%M")
+        fine = datetime.strptime(parti[1].strip(), "%H:%M")
+        durata = (fine - inizio).seconds / 3600
+        if durata <= 0: durata += 24 
+        return durata
+    except: return 0
+
+# --- 3. INIZIALIZZAZIONE SESSIONE ---
 if 'medici' not in st.session_state: st.session_state.medici = ["Piscopo", "Celani", "Lombardo", "Siracusa"]
 if 'assenze' not in st.session_state: st.session_state.assenze = {m: [] for m in st.session_state.medici}
 if 'db_turni' not in st.session_state: st.session_state.db_turni = pd.DataFrame()
 
-# --- 4. SIDEBAR ---
+# --- 4. SIDEBAR (CONTROLLI) ---
 with st.sidebar:
     st.markdown("## 📅 Periodo")
     anno_sel = st.number_input("Anno:", min_value=2024, max_value=2030, value=2026)
@@ -60,6 +71,7 @@ with st.sidebar:
     mese_nome = st.selectbox("Mese:", mesi_ita, index=1)
     m_idx_v = mesi_ita.index(mese_nome) + 1
     festivita_anno = get_festivita(anno_sel)
+    
     st.divider()
     st.markdown("## 👨‍⚕️ Staff")
     nuovo_m = st.text_input("Aggiungi Medico:")
@@ -68,6 +80,7 @@ with st.sidebar:
             st.session_state.medici.append(nuovo_m)
             st.session_state.assenze[nuovo_m] = []
             st.rerun()
+    
     for med in st.session_state.medici:
         c_n, c_d = st.columns([4, 1])
         c_n.write(f"**{med}**")
@@ -75,6 +88,7 @@ with st.sidebar:
             st.session_state.medici.remove(med)
             if med in st.session_state.assenze: del st.session_state.assenze[med]
             st.rerun()
+    
     st.divider()
     m_sel = st.selectbox("Seleziona Medico per assenze:", st.session_state.medici)
     cal = calendar.monthcalendar(anno_sel, m_idx_v)
@@ -87,7 +101,8 @@ with st.sidebar:
                     if is_abs: st.session_state.assenze[m_sel].remove(day)
                     else: st.session_state.assenze[m_sel].append(day)
                     st.rerun()
-                    # --- 5. DASHBOARD ORARI ---
+
+# --- 5. INTERFACCIA PRINCIPALE ---
 st.markdown(f"<div class='main-title'>Gestione Turni: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns(3)
@@ -105,7 +120,7 @@ with col3:
     fes_p = st.text_input("Pomeriggio", value="14:00 - 20:00", key="kf_p")
     fes_n = st.text_input("Notte", value="20:00 - 08:00", key="kf_n")
 
-# --- 6. LOGICA GENERAZIONE ---
+# --- 6. GENERAZIONE TURNI ---
 st.divider()
 if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width=True):
     gg_m = calendar.monthrange(anno_sel, m_idx_v)[1]
@@ -149,7 +164,7 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
         data_list.append({"Data": f"{d} {giorni_sett[wd]}{nome_fest}", "Tipo": tipo, "Mattina": mat_txt, "Pomeriggio": pom_m, "Notte": not_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
     st.session_state.db_turni = pd.DataFrame(data_list)
 
-# --- 7. ANTEPRIMA E DOWNLOAD ---
+# --- 7. MODIFICA E ANTEPRIMA ---
 if not st.session_state.db_turni.empty:
     tab1, tab2 = st.tabs(["📝 Modifica Dati", "👁️ Anteprima Foglio PDF"])
     
@@ -167,7 +182,6 @@ if not st.session_state.db_turni.empty:
     with tab2:
         def genera_pdf_bytes():
             buf = io.BytesIO()
-            # Margini minimizzati per stare in una pagina
             doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.4*cm, bottomMargin=0.4*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
             styles = getSampleStyleSheet()
             elements = [Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", styles['Title']), Spacer(1, 2)]
@@ -194,16 +208,16 @@ if not st.session_state.db_turni.empty:
             doc.build(elements)
             return buf.getvalue()
 
-        # Genera il PDF
         pdf_data = genera_pdf_bytes()
-        
-        # Codifica per l'Iframe
         base64_pdf = base64.b64encode(pdf_data).decode('utf-8')
-        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
         
-        # Visualizzazione
+        # Tag <embed> per massima compatibilità Chrome
+        pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf">'
+        
         st.markdown("### Anteprima Documento")
         st.markdown(pdf_display, unsafe_allow_html=True)
         
         st.divider()
         st.download_button("📥 SCARICA PDF FINALE", data=pdf_data, file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
+
+# Fine Codice
