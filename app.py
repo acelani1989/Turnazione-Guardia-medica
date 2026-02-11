@@ -12,12 +12,13 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 
 # --- 1. CONFIGURAZIONE ---
-st.set_page_config(page_title="Master Guardia Medica - Porto Empedocle", layout="wide")
+st.set_page_config(page_title="Master Guardia Medica", layout="wide")
 
 st.markdown("""
     <style>
     .main-title { color: #1a365d; font-family: 'Helvetica', sans-serif; font-weight: 700; font-size: 2.3rem; border-bottom: 3px solid #63b3ed; padding-bottom: 10px; margin-bottom: 25px; }
     .settings-section { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .preview-box { border: 2px solid #cbd5e0; padding: 20px; background-color: white; border-radius: 5px; font-family: 'Courier New', monospace; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -35,21 +36,15 @@ def get_festivita(anno):
         mese = (h + l - 7 * m + 114) // 31
         giorno = ((h + l - 7 * m + 114) % 31) + 1
         return giorno, mese
-
     g_p, m_p = calcola_pasqua(anno)
     dt_p = datetime(anno, m_p, g_p)
-    try:
-        dt_pp = dt_p.replace(day=g_p+1)
-    except ValueError:
-        dt_pp = datetime(anno, m_p+1, 1)
-
+    try: dt_pp = dt_p.replace(day=g_p+1)
+    except: dt_pp = datetime(anno, m_p+1, 1)
     return {
-        (1, 1): "Capodanno", (6, 1): "Epifania",
-        (25, 4): "Liberazione", (1, 5): "Festa Lavoro", (2, 6): "Festa Repubblica",
-        (15, 8): "Ferragosto", (1, 11): "Ognissanti", (8, 12): "Immacolata",
-        (25, 12): "Natale", (26, 12): "S. Stefano",
-        (dt_p.day, dt_p.month): "Pasqua", (dt_pp.day, dt_pp.month): "Pasquetta",
-        (25, 2): "S. Patrono"
+        (1, 1): "Capodanno", (6, 1): "Epifania", (25, 4): "Liberazione", (1, 5): "Festa Lavoro", 
+        (2, 6): "Festa Repubblica", (15, 8): "Ferragosto", (1, 11): "Ognissanti", 
+        (8, 12): "Immacolata", (25, 12): "Natale", (26, 12): "S. Stefano",
+        (dt_p.day, dt_p.month): "Pasqua", (dt_pp.day, dt_pp.month): "Pasquetta", (25, 2): "S. Patrono"
     }
 
 def calcola_durata(intervallo):
@@ -64,12 +59,9 @@ def calcola_durata(intervallo):
     except: return 0
 
 # --- 3. STATO SESSIONE ---
-if 'medici' not in st.session_state: 
-    st.session_state.medici = ["Piscopo", "Celani", "Lombardo", "Siracusa"]
-if 'assenze' not in st.session_state: 
-    st.session_state.assenze = {m: [] for m in st.session_state.medici}
-if 'db_turni' not in st.session_state: 
-    st.session_state.db_turni = pd.DataFrame()
+if 'medici' not in st.session_state: st.session_state.medici = ["Piscopo", "Celani", "Lombardo", "Siracusa"]
+if 'assenze' not in st.session_state: st.session_state.assenze = {m: [] for m in st.session_state.medici}
+if 'db_turni' not in st.session_state: st.session_state.db_turni = pd.DataFrame()
 
 # --- 4. SIDEBAR ---
 with st.sidebar:
@@ -79,7 +71,6 @@ with st.sidebar:
     mese_nome = st.selectbox("Mese:", mesi_ita, index=1)
     m_idx_v = mesi_ita.index(mese_nome) + 1
     festivita_anno = get_festivita(anno_sel)
-
     st.divider()
     st.markdown("## 👨‍⚕️ Staff")
     nuovo_m = st.text_input("Aggiungi Medico:")
@@ -88,7 +79,6 @@ with st.sidebar:
             st.session_state.medici.append(nuovo_m)
             st.session_state.assenze[nuovo_m] = []
             st.rerun()
-
     for med in st.session_state.medici:
         c_n, c_d = st.columns([4, 1])
         c_n.write(f"**{med}**")
@@ -96,23 +86,8 @@ with st.sidebar:
             st.session_state.medici.remove(med)
             if med in st.session_state.assenze: del st.session_state.assenze[med]
             st.rerun()
-    
     st.divider()
-    st.markdown("### 📅 Indisponibilità")
-    m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
-    
-    st.write("Segna tutti i:")
-    giorni_sett = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
-    cols_scor = st.columns(4)
-    for i, g_nome in enumerate(giorni_sett):
-        if cols_scor[i % 4].button(g_nome, key=f"btn_{g_nome}"):
-            for d in range(1, 32):
-                try:
-                    if datetime(anno_sel, m_idx_v, d).weekday() == i:
-                        if d not in st.session_state.assenze[m_sel]: st.session_state.assenze[m_sel].append(d)
-                except: pass
-            st.rerun()
-    
+    m_sel = st.selectbox("Seleziona Medico per assenze:", st.session_state.medici)
     cal = calendar.monthcalendar(anno_sel, m_idx_v)
     for week in cal:
         cols = st.columns(7)
@@ -123,24 +98,7 @@ with st.sidebar:
                     if is_abs: st.session_state.assenze[m_sel].remove(day)
                     else: st.session_state.assenze[m_sel].append(day)
                     st.rerun()
-
-    st.divider()
-    st.markdown("### 💾 Backup e Ripristino")
-    data_to_save = {"medici": st.session_state.medici, "assenze": st.session_state.assenze}
-    json_data = json.dumps(data_to_save, indent=4)
-    st.download_button(label="📥 ESPORTA BACKUP (JSON)", data=json_data, file_name=f"backup_guardia_{datetime.now().strftime('%Y%m%d')}.json", mime="application/json", use_container_width=True)
-
-    uploaded_backup = st.file_uploader("📤 IMPORTA BACKUP", type=["json"])
-    if uploaded_backup:
-        try:
-            imported_data = json.load(uploaded_backup)
-            st.session_state.medici = imported_data["medici"]
-            st.session_state.assenze = imported_data["assenze"]
-            st.success("Dati ripristinati!")
-            if st.button("Aggiorna Pagina"): st.rerun()
-        except Exception as e:
-            st.error(f"Errore: {e}")
-            # --- 5. DASHBOARD ORARI ---
+                    # --- 5. DASHBOARD ORARI ---
 st.markdown(f"<div class='main-title'>Gestione Turni: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns(3)
@@ -160,10 +118,11 @@ with col3:
 
 # --- 6. LOGICA GENERAZIONE ---
 st.divider()
-if st.button("🚀 GENERA PIANO TURNI", type="primary", use_container_width=True):
+if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width=True):
     gg_m = calendar.monthrange(anno_sel, m_idx_v)[1]
     data_list = []
     ultimo_notte = None 
+    giorni_sett = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
 
     for d in range(1, gg_m + 1):
         dt = datetime(anno_sel, m_idx_v, d)
@@ -203,38 +162,39 @@ if st.button("🚀 GENERA PIANO TURNI", type="primary", use_container_width=True
         data_list.append({"Data": f"{d} {giorni_sett[wd]}{nome_fest}", "Tipo": tipo, "Mattina": mat_txt, "Pomeriggio": pom_m, "Notte": not_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
     st.session_state.db_turni = pd.DataFrame(data_list)
 
-# --- 7. TABELLONE E RIEPILOGO ---
+# --- 7. ANTEPRIMA E DOWNLOAD ---
 if not st.session_state.db_turni.empty:
-    st.markdown("### 📅 Tabellone")
-    lista_opzioni = ["---"] + st.session_state.medici
-    edited_db = st.data_editor(st.session_state.db_turni, column_config={
-        "Data": st.column_config.Column("Giorno", width="medium", disabled=True),
-        "Mattina": st.column_config.SelectboxColumn("☀️ Mattina", options=lista_opzioni),
-        "Pomeriggio": st.column_config.SelectboxColumn("🌤️ Pomeriggio", options=lista_opzioni),
-        "Notte": st.column_config.SelectboxColumn("🌙 Notte", options=lista_opzioni),
-        "Tipo": None, "H_M": None, "H_P": None, "H_N": None,
-    }, use_container_width=True, hide_index=True)
-    st.session_state.db_turni = edited_db
+    tab1, tab2 = st.tabs(["📝 Modifica Dati", "👁️ Anteprima PDF"])
+    
+    with tab1:
+        st.info("Modifica i nomi direttamente nella tabella qui sotto se necessario.")
+        lista_opzioni = ["---"] + st.session_state.medici
+        st.session_state.db_turni = st.data_editor(st.session_state.db_turni, column_config={
+            "Data": st.column_config.Column("Giorno", disabled=True),
+            "Mattina": st.column_config.SelectboxColumn("☀️ Mattina", options=lista_opzioni),
+            "Pomeriggio": st.column_config.SelectboxColumn("🌤️ Pomeriggio", options=lista_opzioni),
+            "Notte": st.column_config.SelectboxColumn("🌙 Notte", options=lista_opzioni),
+            "Tipo": None, "H_M": None, "H_P": None, "H_N": None,
+        }, use_container_width=True, hide_index=True)
 
-    st.divider()
-    col_rec, col_down = st.columns([2, 1])
-    with col_rec:
-        st.markdown("#### 📊 Riepilogo Ore")
-        ore_calc = {m: 0.0 for m in st.session_state.medici}
-        for _, r in st.session_state.db_turni.iterrows():
-            if r["Pomeriggio"] in ore_calc: ore_calc[r["Pomeriggio"]] += calcola_durata(r["H_P"])
-            if r["Notte"] in ore_calc: ore_calc[r["Notte"]] += calcola_durata(r["H_N"])
-            if "/" in str(r["Mattina"]):
-                for p in r["Mattina"].split("/"):
-                    if p.strip() in ore_calc: ore_calc[p.strip()] += (calcola_durata(r["H_M"]) / 2)
-            elif r["Mattina"] in ore_calc: ore_calc[r["Mattina"]] += calcola_durata(r["H_M"])
-        st.dataframe(pd.DataFrame([{"Medico": m, "Ore": f"{h:.1f}"} for m, h in ore_calc.items()]), hide_index=True)
+    with tab2:
+        st.subheader("Anteprima Layout Finale")
+        # Creazione anteprima visiva stilizzata
+        def style_row(row):
+            if row.Tipo == "Festivo": return ['background-color: #ffebee'] * len(row)
+            if row.Tipo == "Prefestivo": return ['background-color: #fffde7'] * len(row)
+            return [''] * len(row)
+        
+        preview_df = st.session_state.db_turni.copy()
+        preview_df['Mattina'] = preview_df.apply(lambda r: f"{r.Mattina} ({r.H_M})" if r.Mattina != "---" else "---", axis=1)
+        preview_df['Pomeriggio'] = preview_df.apply(lambda r: f"{r.Pomeriggio} ({r.H_P})" if r.Pomeriggio != "---" else "---", axis=1)
+        preview_df['Notte'] = preview_df.apply(lambda r: f"{r.Notte} ({r.H_N})" if r.Notte != "---" else "---", axis=1)
+        
+        st.dataframe(preview_df[['Data', 'Mattina', 'Pomeriggio', 'Notte']].style.apply(style_row, axis=1), use_container_width=True, hide_index=True)
 
-    with col_down:
         def genera_pdf():
             buf = io.BytesIO()
-            # Margini minimizzati a 0.3cm
-            doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.3*cm, bottomMargin=0.3*cm, leftMargin=0.3*cm, rightMargin=0.3*cm)
+            doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.4*cm, bottomMargin=0.4*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
             styles = getSampleStyleSheet()
             title_style = styles['Title']
             title_style.fontSize = 10
@@ -242,32 +202,24 @@ if not st.session_state.db_turni.empty:
             
             data_pdf = [["GIORNO", "MATTINA", "POMERIGGIO", "NOTTE"]]
             table_styles = [
-                ('GRID', (0,0), (-1,-1), 0.3, colors.grey),
-                ('FONTSIZE', (0,0), (-1,-1), 7.0), # Font ultra-compatto
-                ('LEADING', (0,0), (-1,-1), 8.5), # Interlinea stretta
-                ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
-                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 0.5), # Spazio minimo
-                ('TOPPADDING', (0,0), (-1,-1), 0.5),
+                ('GRID', (0,0), (-1,-1), 0.3, colors.grey), ('FONTSIZE', (0,0), (-1,-1), 7.0),
+                ('LEADING', (0,0), (-1,-1), 8.5), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke), ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BOTTOMPADDING', (0,0), (-1,-1), 0.5), ('TOPPADDING', (0,0), (-1,-1), 0.5),
             ]
-            
             for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
                 row_idx = i + 1
-                mat_info = f"{r['Mattina']}\n{r['H_M']}" if r['Mattina'] != "---" else "---"
-                pom_info = f"{r['Pomeriggio']}\n{r['H_P']}" if r['Pomeriggio'] != "---" else "---"
-                not_info = f"{r['Notte']}\n{r['H_N']}" if r['Notte'] != "---" else "---"
-                data_pdf.append([r["Data"], mat_info, pom_info, not_info])
-                
-                if r["Tipo"] == "Festivo":
-                    table_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightpink))
-                elif r["Tipo"] == "Prefestivo":
-                    table_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightyellow))
-
-            t = Table(data_pdf, colWidths=[3.2*cm, 5.7*cm, 5.7*cm, 5.7*cm], repeatRows=1)
+                m_inf = f"{r['Mattina']}\n{r['H_M']}" if r['Mattina'] != "---" else "---"
+                p_inf = f"{r['Pomeriggio']}\n{r['H_P']}" if r['Pomeriggio'] != "---" else "---"
+                n_inf = f"{r['Notte']}\n{r['H_N']}" if r['Notte'] != "---" else "---"
+                data_pdf.append([r["Data"], m_inf, p_inf, n_inf])
+                if r["Tipo"] == "Festivo": table_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightpink))
+                elif r["Tipo"] == "Prefestivo": table_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightyellow))
+            
+            t = Table(data_pdf, colWidths=[3.2*cm, 5.7*cm, 5.7*cm, 5.7*cm])
             t.setStyle(TableStyle(table_styles))
             elements.append(t)
             doc.build(elements)
             return buf.getvalue()
-        st.download_button("📥 SCARICA PDF COMPATTO (1 PAGINA)", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
+
+        st.download_button("📥 SCARICA PDF (PAGINA SINGOLA)", data=genera_pdf(), file_name=f"Turni_{mese_nome}.pdf", use_container_width=True)
