@@ -11,7 +11,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 
-# --- 1. DESIGN ---
+# --- 1. CONFIGURAZIONE E DESIGN ---
 st.set_page_config(page_title="Master Guardia Medica Pro", layout="wide")
 
 st.markdown("""
@@ -22,15 +22,14 @@ st.markdown("""
         background-size: cover;
         background-attachment: fixed;
     }
-    .main-title { color: #2c5282; font-weight: 800; font-size: 2.5rem; text-align: center; margin-bottom: 20px; }
-    .settings-section { background-color: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 10px; border-left: 5px solid #4299e1; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 15px; }
+    .main-title { color: #2c5282; font-weight: 800; font-size: 2.2rem; text-align: center; margin-bottom: 15px; }
+    .settings-section { background-color: rgba(255, 255, 255, 0.95); padding: 12px; border-radius: 10px; border-left: 5px solid #4299e1; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 10px; }
     .sidebar-header { color: #2b6cb0; font-weight: 700; border-bottom: 2px solid #bee3f8; padding-bottom: 5px; margin-bottom: 10px; }
     div[data-baseweb="select"] *, div[data-baseweb="input"] * { color: #000000 !important; }
-    [data-testid="stSidebar"] label p { color: #1a365d !important; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. LOGICA TURNI E ORE ---
+# --- 2. FUNZIONI LOGICHE ---
 def get_festivita(anno):
     def calcola_pasqua(y):
         a, b, c = y % 19, y // 100, y % 100
@@ -119,7 +118,7 @@ with st.sidebar:
         data = json.load(up); st.session_state.medici, st.session_state.assenze = data["medici"], data["assenze"]; st.rerun()
 
 # --- 5. INTERFACCIA PRINCIPALE ---
-st.markdown(f"<div class='main-title'>Turni: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
+st.markdown(f"<div class='main-title'>Gestione Turni: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
 
 c1, c2, c3 = st.columns(3)
 with c1:
@@ -143,7 +142,6 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
     for d in range(1, gg_m + 1):
         dt = datetime(anno_sel, m_idx_v, d)
         wd = dt.weekday()
-        # Assicura che la colonna Info esista sempre
         nome_f = fest.get((d, m_idx_v), "")
         tipo = "Festivo" if (wd == 6 or (d, m_idx_v) in fest) else ("Prefestivo" if (wd == 5 or (d==24 and m_idx_v==2)) else "Feriale")
         disp = [m for m in st.session_state.medici if d not in st.session_state.assenze.get(m, [])]
@@ -162,26 +160,14 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
             n_m = random.choice(cand); h_n = f_n
             
         u_n = n_m
-        res.append({
-            "Data": f"{d} {g_short[wd]}", 
-            "Info": nome_f, 
-            "Tipo": tipo, 
-            "Mattina": m_m, 
-            "Pomeriggio": p_m, 
-            "Notte": n_m, 
-            "H_M": h_m, 
-            "H_P": h_p, 
-            "H_N": h_n
-        })
+        res.append({"Data": f"{d} {g_short[wd]}", "Info": nome_f, "Tipo": tipo, "Mattina": m_m, "Pomeriggio": p_m, "Notte": n_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
     st.session_state.db_turni = pd.DataFrame(res)
 
 # --- 6. RIEPILOGO E PDF ---
 if not st.session_state.db_turni.empty:
-    # Check di sicurezza per colonne mancanti
     cols_to_show = ["Data", "Info", "Tipo", "Mattina", "Pomeriggio", "Notte"]
     for col in cols_to_show:
-        if col not in st.session_state.db_turni.columns:
-            st.session_state.db_turni[col] = ""
+        if col not in st.session_state.db_turni.columns: st.session_state.db_turni[col] = ""
 
     t1, t2 = st.tabs(["📝 MODIFICA & ORE", "👁️ ANTEPRIMA PDF"])
     with t1:
@@ -212,19 +198,34 @@ if not st.session_state.db_turni.empty:
         
         def genera_pdf():
             buf = io.BytesIO()
-            doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.4*cm, bottomMargin=0.4*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
+            # Margini ultra-ridotti (0.3cm) per forzare la singola pagina
+            doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.3*cm, bottomMargin=0.3*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
             elements = []
             styles = getSampleStyleSheet()
-            elements.append(Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", styles['Title']))
             
+            # Titolo compatto
+            title_style = styles['Title']
+            title_style.fontSize = 12
+            title_style.spaceAfter = 4
+            elements.append(Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", title_style))
+            
+            # Tabella principale con font ridotto (6.5pt) e padding stretto
             data = [["GIORNO", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
-            t_styles = [('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('ALIGN', (0,0), (-1,-1), 'CENTER'), 
-                        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTSIZE', (0,0), (-1,-1), 7), 
-                        ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]
+            t_styles = [
+                ('GRID', (0,0), (-1,-1), 0.3, colors.grey),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'), 
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('FONTSIZE', (0,0), (-1,-1), 6.5), 
+                ('LEADING', (0,0), (-1,-1), 7.5),
+                ('TOPPADDING', (0,0), (-1,-1), 1),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+                ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)
+            ]
             
             for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
                 row_idx = i + 1
-                fest_str = f"\n({r['Info']})" if r.get('Info') else ""
+                fest_str = f" ({r['Info']})" if r.get('Info') else ""
                 data.append([
                     f"{r['Data']}{fest_str}", 
                     r["Tipo"],
@@ -235,19 +236,33 @@ if not st.session_state.db_turni.empty:
                 if r["Tipo"] == "Festivo": t_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightpink))
                 elif r["Tipo"] == "Prefestivo": t_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightyellow))
             
-            t = Table(data, colWidths=[3.2*cm, 2.5*cm, 4.8*cm, 4.8*cm, 4.8*cm])
+            t = Table(data, colWidths=[3.2*cm, 2.2*cm, 4.9*cm, 4.9*cm, 4.9*cm])
             t.setStyle(TableStyle(t_styles))
             elements.append(t)
             
-            elements.append(Spacer(1, 10))
-            elements.append(Paragraph(f"RIEPILOGO ORE {mese_nome.upper()}", styles['Heading4']))
+            # Spazio minimo prima del riepilogo
+            elements.append(Spacer(1, 5))
+            
+            # Riepilogo Ore compatto
+            h_style = styles['Heading4']
+            h_style.fontSize = 9
+            h_style.spaceBefore = 0
+            h_style.spaceAfter = 2
+            elements.append(Paragraph(f"RIEPILOGO ORE {mese_nome.upper()}", h_style))
+            
             data_ore = [[m, f"{int(h)} h"] for m, h in ore_m.items()]
             data_ore.append([f"TOTALE {mese_nome.upper()}", f"{int(tot_mese)} h"])
             t_ore = Table(data_ore, colWidths=[10*cm, 4*cm])
-            t_ore.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('FONTSIZE', (0,0), (-1,-1), 8), ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold')]))
+            t_ore.setStyle(TableStyle([
+                ('GRID', (0,0), (-1,-1), 0.3, colors.grey),
+                ('FONTSIZE', (0,0), (-1,-1), 7.5),
+                ('TOPPADDING', (0,0), (-1,-1), 1),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+                ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold')
+            ]))
             elements.append(t_ore)
             
             doc.build(elements)
             return buf.getvalue()
             
-        st.download_button(f"📥 SCARICA PDF COMPLETO {mese_nome.upper()}", genera_pdf(), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True, type="primary")
+        st.download_button(f"📥 SCARICA PDF (PAGINA SINGOLA)", genera_pdf(), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True, type="primary")
