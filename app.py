@@ -4,7 +4,6 @@ import calendar
 import random
 import io
 import json
-import base64
 from datetime import datetime
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -182,9 +181,17 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
 
 # --- 6. RIEPILOGO E PDF ---
 if not st.session_state.db_turni.empty:
-    t1, t2 = st.tabs(["📝 MODIFICA & ORE", "👁️ ANTEPRIMA & STAMPA PDF"])
-    
-    # CALCOLO ORE PER RIEPILOGO
+    st.session_state.db_turni = st.data_editor(st.session_state.db_turni, column_config={
+        "Data": st.column_config.Column(disabled=True),
+        "Info": st.column_config.Column("Festività", disabled=True),
+        "Tipo": st.column_config.Column(disabled=True),
+        "Mattina": st.column_config.SelectboxColumn(options=["---"] + st.session_state.medici),
+        "Pomeriggio": st.column_config.SelectboxColumn(options=["---"] + st.session_state.medici),
+        "Notte": st.column_config.SelectboxColumn(options=["---"] + st.session_state.medici),
+        "H_M": None, "H_P": None, "H_N": None
+    }, use_container_width=True, hide_index=True)
+
+    # Calcolo Ore
     ore_m = {m: 0.0 for m in st.session_state.medici}
     tot_mese = 0.0
     for _, r in st.session_state.db_turni.iterrows():
@@ -194,86 +201,75 @@ if not st.session_state.db_turni.empty:
         if r["Pomeriggio"] in ore_m: ore_m[r["Pomeriggio"]] += d2
         if r["Notte"] in ore_m: ore_m[r["Notte"]] += d3
 
-    with t1:
-        st.session_state.db_turni = st.data_editor(st.session_state.db_turni, column_config={
-            "Data": st.column_config.Column(disabled=True),
-            "Info": st.column_config.Column("Festività", disabled=True),
-            "Tipo": st.column_config.Column(disabled=True),
-            "Mattina": st.column_config.SelectboxColumn(options=["---"] + st.session_state.medici),
-            "Pomeriggio": st.column_config.SelectboxColumn(options=["---"] + st.session_state.medici),
-            "Notte": st.column_config.SelectboxColumn(options=["---"] + st.session_state.medici),
-            "H_M": None, "H_P": None, "H_N": None
-        }, use_container_width=True, hide_index=True)
-        
-        st.markdown(f"### 📊 Ore Totali {mese_nome}: **{int(tot_mese)} h**")
-        for med, ore in ore_m.items():
-            if ore > soglia_ore: st.error(f"⚠️ **{med}** ha superato la soglia: **{int(ore)}h**")
-            elif ore > (soglia_ore - 15): st.warning(f"🔔 **{med}** vicino alla soglia: **{int(ore)}h**")
-        st.table(pd.DataFrame([{"Medico": m, f"Ore {mese_nome}": f"{int(h)} h"} for m, h in ore_m.items()]))
+    st.markdown(f"### 📊 Ore Totali {mese_nome}: **{int(tot_mese)} h**")
+    st.table(pd.DataFrame([{"Medico": m, f"Ore {mese_nome}": f"{int(h)} h"} for m, h in ore_m.items()]))
 
-    with t2:
-        def genera_pdf():
-            buf = io.BytesIO()
-            # Margini stretti per pagina singola
-            doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.4*cm, bottomMargin=0.4*cm, leftMargin=0.5*cm, rightMargin=0.5*cm)
-            elements = []
-            styles = getSampleStyleSheet()
-            
-            # Titolo
-            elements.append(Paragraph(f"<b>PROGRAMMAZIONE TURNI - {mese_nome.upper()} {anno_sel}</b>", styles['Title']))
-            elements.append(Spacer(1, 10))
-            
-            # Tabella Dati
-            data = [["GIORNO", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
-            t_styles = [
-                ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('FONTSIZE', (0,0), (-1,-1), 7.5),
-                ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
-                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold')
-            ]
-            
-            for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
-                row_idx = i + 1
-                fest_info = f"\n({r['Info']})" if r['Info'] else ""
-                data.append([f"{r['Data']}{fest_info}", r["Tipo"], 
-                             f"{r['Mattina']}\n{r['H_M']}" if r['Mattina']!="---" else "---",
-                             f"{r['Pomeriggio']}\n{r['H_P']}" if r['Pomeriggio']!="---" else "---",
-                             f"{r['Notte']}\n{r['H_N']}" if r['Notte']!="---" else "---"])
-                
-                if r["Tipo"] == "Festivo": t_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightpink))
-                elif r["Tipo"] == "Prefestivo": t_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightyellow))
-            
-            table = Table(data, colWidths=[3.2*cm, 2.3*cm, 4.8*cm, 4.8*cm, 4.8*cm])
-            table.setStyle(TableStyle(t_styles))
-            elements.append(table)
-            
-            # Riepilogo Ore Finale
-            elements.append(Spacer(1, 10))
-            elements.append(Paragraph(f"<b>RIEPILOGO ORE DEL MESE CORRENTE - {mese_nome.upper()}</b>", styles['Heading3']))
-            
-            data_ore_pdf = [["MEDICO", "TOTALE ORE"]] + [[m, f"{int(h)} h"] for m, h in ore_m.items()]
-            data_ore_pdf.append(["TOTALE COMPLESSIVO", f"{int(tot_mese)} h"])
-            
-            t_ore = Table(data_ore_pdf, colWidths=[10*cm, 4*cm])
-            t_ore.setStyle(TableStyle([
-                ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-                ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                ('FONTSIZE', (0,0), (-1,-1), 8),
-                ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold')
-            ]))
-            elements.append(t_ore)
-            
-            doc.build(elements)
-            return buf.getvalue()
-
-        # Visualizzazione Anteprima e Download
-        pdf_bytes = genera_pdf()
-        b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-        pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
-        st.markdown(pdf_display, unsafe_allow_html=True)
+    def genera_pdf_fuso():
+        buf = io.BytesIO()
+        # Margini ultra-ottimizzati per pagina singola
+        doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.4*cm, bottomMargin=0.4*cm, leftMargin=0.5*cm, rightMargin=0.5*cm)
+        elements = []
+        styles = getSampleStyleSheet()
         
-        st.download_button(f"📥 SCARICA PDF UFFICIALE", pdf_bytes, f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True, type="primary")
+        # Titolo Istituzionale
+        elements.append(Paragraph(f"<b>PIANIFICAZIONE TURNI - {mese_nome.upper()} {anno_sel}</b>", styles['Title']))
+        elements.append(Spacer(1, 10))
+        
+        # Tabella Turni
+        data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
+        t_styles = [
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('FONTSIZE', (0,0), (-1,-1), 7),
+            ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold')
+        ]
+        
+        for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
+            idx = i + 1
+            fest_txt = f"\n({r['Info']})" if r['Info'] else ""
+            data.append([f"{r['Data']}{fest_txt}", r["Tipo"], 
+                         f"{r['Mattina']}\n{r['H_M']}" if r['Mattina']!="---" else "---",
+                         f"{r['Pomeriggio']}\n{r['H_P']}" if r['Pomeriggio']!="---" else "---",
+                         f"{r['Notte']}\n{r['H_N']}" if r['Notte']!="---" else "---"])
+            
+            if r["Tipo"] == "Festivo": t_styles.append(('BACKGROUND', (0, idx), (-1, idx), colors.lightpink))
+            elif r["Tipo"] == "Prefestivo": t_styles.append(('BACKGROUND', (0, idx), (-1, idx), colors.lightyellow))
+        
+        table = Table(data, colWidths=[3.2*cm, 2.3*cm, 4.8*cm, 4.8*cm, 4.8*cm])
+        table.setStyle(TableStyle(t_styles))
+        elements.append(table)
+        
+        # Sezione Riepilogo Integrata (Punto richiesto)
+        elements.append(Spacer(1, 12))
+        elements.append(Paragraph(f"<b>RIEPILOGO ORE TOTALI DEL MESE {mese_nome.upper()}</b>", styles['Heading3']))
+        
+        data_riepilogo = [["MEDICO", "ORE TOTALI"]]
+        for m, h in ore_m.items():
+            data_riepilogo.append([m, f"{int(h)} h"])
+        data_riepilogo.append(["TOTALE COMPLESSIVO MESE", f"{int(tot_mese)} h"])
+        
+        t_riep = Table(data_riepilogo, colWidths=[9*cm, 5*cm])
+        t_riep.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTSIZE', (0,0), (-1,-1), 8.5),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold')
+        ]))
+        elements.append(t_riep)
+        
+        doc.build(elements)
+        return buf.getvalue()
+
+    st.download_button(
+        label=f"📥 SCARICA PDF TURNI {mese_nome.upper()} (PAGINA SINGOLA)",
+        data=genera_pdf_fuso(),
+        file_name=f"Turni_{mese_nome}_{anno_sel}.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+        type="primary"
+    )
