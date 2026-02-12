@@ -200,38 +200,29 @@ if not st.session_state.db_turni.empty:
         st.divider()
         st.subheader("📊 Riepilogo Ore Mensili")
         ore_calc = {m: 0.0 for m in st.session_state.medici}
+        ore_totali_mese_teoriche = 0.0
         for _, r in st.session_state.db_turni.iterrows():
-            if r["Mattina"] in ore_calc: ore_calc[r["Mattina"]] += calcola_durata(r["H_M"])
-            if r["Pomeriggio"] in ore_calc: ore_calc[r["Pomeriggio"]] += calcola_durata(r["H_P"])
-            if r["Notte"] in ore_calc: ore_calc[r["Notte"]] += calcola_durata(r["H_N"])
+            d_m, d_p, d_n = calcola_durata(r["H_M"]), calcola_durata(r["H_P"]), calcola_durata(r["H_N"])
+            ore_totali_mese_teoriche += (d_m + d_p + d_n)
+            if r["Mattina"] in ore_calc: ore_calc[r["Mattina"]] += d_m
+            if r["Pomeriggio"] in ore_calc: ore_calc[r["Pomeriggio"]] += d_p
+            if r["Notte"] in ore_calc: ore_calc[r["Notte"]] += d_n
         
         df_ore = pd.DataFrame([{"Medico": m, "Ore Totali": int(round(h, 0))} for m, h in ore_calc.items()])
-        totale_complessivo = df_ore["Ore Totali"].sum()
         st.table(df_ore)
-        st.markdown(f"**TOTALE ORE MESE (TUTTO LO STAFF): {totale_complessivo} ore**")
+        st.markdown(f"**TOTALE ORE PREVISTE DA {mese_nome.upper()}: {int(round(ore_totali_mese_teoriche, 0))} ore**")
 
     with tab2:
         def genera_pdf():
             buf = io.BytesIO()
-            # Margini molto stretti per far stare tutto
-            doc = SimpleDocTemplate(
-                buf, 
-                pagesize=A4, 
-                topMargin=0.3*cm, 
-                bottomMargin=0.3*cm, 
-                leftMargin=0.4*cm, 
-                rightMargin=0.4*cm
-            )
+            doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.3*cm, bottomMargin=0.3*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
             styles = getSampleStyleSheet()
-            # Stile titolo più compatto
             title_style = styles['Title']
             title_style.fontSize = 14
             title_style.spaceAfter = 6
-            
             elements = []
             elements.append(Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", title_style))
             
-            # Tabella Turni - Font ridotto a 7.5 per compattezza
             data_pdf = [["GIORNO", "MATTINA", "POMERIGGIO", "NOTTE"]]
             t_styles = [
                 ('GRID', (0,0), (-1,-1), 0.2, colors.grey),
@@ -245,6 +236,9 @@ if not st.session_state.db_turni.empty:
                 ('TOPPADDING', (0,0), (-1,-1), 1),
             ]
             
+            ore_teoriche_pdf = 0.0
+            ore_medici_pdf = {m: 0.0 for m in st.session_state.medici}
+            
             for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
                 row_idx = i + 1
                 data_pdf.append([
@@ -253,37 +247,32 @@ if not st.session_state.db_turni.empty:
                     f"{r['Pomeriggio']}\n({r['H_P']})" if r['Pomeriggio'] != "---" else "---",
                     f"{r['Notte']}\n({r['H_N']})" if r['Notte'] != "---" else "---"
                 ])
+                
+                d_m, d_p, d_n = calcola_durata(r["H_M"]), calcola_durata(r["H_P"]), calcola_durata(r["H_N"])
+                ore_teoriche_pdf += (d_m + d_p + d_n)
+                if r["Mattina"] in ore_medici_pdf: ore_medici_pdf[r["Mattina"]] += d_m
+                if r["Pomeriggio"] in ore_medici_pdf: ore_medici_pdf[r["Pomeriggio"]] += d_p
+                if r["Notte"] in ore_medici_pdf: ore_medici_pdf[r["Notte"]] += d_n
+
                 if r["Tipo"] == "Festivo": t_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightpink))
                 elif r["Tipo"] == "Prefestivo": t_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightyellow))
             
             t_turni = Table(data_pdf, colWidths=[3.2*cm, 5.6*cm, 5.6*cm, 5.6*cm])
             t_turni.setStyle(TableStyle(t_styles))
             elements.append(t_turni)
-            
-            # Spazio ridotto tra tabelle
             elements.append(Spacer(1, 8))
             
-            # Sottotitolo riepilogo
             h_style = styles['Heading3']
             h_style.fontSize = 10
             h_style.spaceAfter = 4
             elements.append(Paragraph("RIEPILOGO ORE MENSILI", h_style))
             
-            # Calcolo ore
-            ore_pdf = {m: 0.0 for m in st.session_state.medici}
-            for _, r in st.session_state.db_turni.iterrows():
-                if r["Mattina"] in ore_pdf: ore_pdf[r["Mattina"]] += calcola_durata(r["H_M"])
-                if r["Pomeriggio"] in ore_pdf: ore_pdf[r["Pomeriggio"]] += calcola_durata(r["H_P"])
-                if r["Notte"] in ore_pdf: ore_pdf[r["Notte"]] += calcola_durata(r["H_N"])
-            
             data_ore = [["MEDICO", "ORE TOTALI"]]
-            for m, h in ore_pdf.items():
+            for m, h in ore_medici_pdf.items():
                 data_ore.append([m, f"{int(round(h, 0))} h"])
             
-            tot_h = sum(ore_pdf.values())
-            data_ore.append(["TOTALE COMPLESSIVO STAFF", f"{int(round(tot_h, 0))} h"])
+            data_ore.append([f"TOTALE ORE PREVISTE DA {mese_nome.upper()}", f"{int(round(ore_teoriche_pdf, 0))} h"])
             
-            # Tabella ore più compatta
             t_ore = Table(data_ore, colWidths=[10*cm, 4*cm])
             t_ore.setStyle(TableStyle([
                 ('GRID', (0,0), (-1,-1), 0.2, colors.grey),
@@ -300,14 +289,4 @@ if not st.session_state.db_turni.empty:
             doc.build(elements)
             return buf.getvalue()
         
-        st.subheader("Anteprima Rapida")
-        st.dataframe(st.session_state.db_turni[["Data", "Mattina", "Pomeriggio", "Notte"]], use_container_width=True, hide_index=True)
-        
-        st.divider()
-        st.download_button(
-            "📥 SCARICA PDF (SINGOLA PAGINA)", 
-            data=genera_pdf(), 
-            file_name=f"Turni_{mese_nome}_{anno_sel}.pdf", 
-            use_container_width=True, 
-            type="primary"
-        )
+        st.download_button("📥 SCARICA PDF (SINGOLA PAGINA)", data=genera_pdf(), file_name=f"Turni_{mese_nome}_{anno_sel}.pdf", use_container_width=True, type="primary")
