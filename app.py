@@ -88,38 +88,6 @@ with st.sidebar:
             st.session_state.medici.remove(med)
             if med in st.session_state.assenze: del st.session_state.assenze[med]
             st.rerun()
-    
-    st.divider()
-    st.markdown("<div class='sidebar-header'>📅 INDISPONIBILITÀ</div>", unsafe_allow_html=True)
-    m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
-    
-    g_short = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
-    cols_sh = st.columns(7)
-    cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
-    for i, label in enumerate(g_short):
-        if cols_sh[i].button(label, key=f"sh_{label}"):
-            giorni_da_cambiare = [sett[i] for sett in cal_data if sett[i] != 0]
-            current_abs = st.session_state.assenze.get(m_sel, [])
-            if all(d in current_abs for d in giorni_da_cambiare):
-                st.session_state.assenze[m_sel] = [d for d in current_abs if d not in giorni_da_cambiare]
-            else:
-                for d in giorni_da_cambiare:
-                    if d not in current_abs: st.session_state.assenze[m_sel].append(d)
-            st.rerun()
-
-    for week in cal_data:
-        cols = st.columns(7)
-        for i, day in enumerate(week):
-            if day != 0:
-                is_abs = day in st.session_state.assenze.get(m_sel, [])
-                if cols[i].button(str(day), key=f"d_btn_{day}", type="primary" if is_abs else "secondary"):
-                    if is_abs: st.session_state.assenze[m_sel].remove(day)
-                    else: st.session_state.assenze[m_sel].append(day)
-                    st.rerun()
-
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
-    data_to_export = {"medici": st.session_state.medici, "assenze": st.session_state.assenze}
-    st.download_button(label="📥 Scarica Backup", data=json.dumps(data_to_export, indent=4), file_name=f"backup_guardia_{datetime.now().strftime('%Y%m%d')}.json", mime="application/json", use_container_width=True)
 
 # --- 5. INTERFACCIA PRINCIPALE ---
 st.markdown(f"<div class='main-title'>Gestione Turni: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
@@ -200,19 +168,22 @@ if not st.session_state.db_turni.empty:
         st.divider()
         st.subheader("📊 Riepilogo Ore Mensili")
         ore_calc = {m: 0.0 for m in st.session_state.medici}
-        ore_totali_mese_teoriche = 0.0
+        ore_tot_mese_cal = 0.0
         for _, r in st.session_state.db_turni.iterrows():
             d_m, d_p, d_n = calcola_durata(r["H_M"]), calcola_durata(r["H_P"]), calcola_durata(r["H_N"])
-            ore_totali_mese_teoriche += (d_m + d_p + d_n)
+            ore_tot_mese_cal += (d_m + d_p + d_n)
             if r["Mattina"] in ore_calc: ore_calc[r["Mattina"]] += d_m
             if r["Pomeriggio"] in ore_calc: ore_calc[r["Pomeriggio"]] += d_p
             if r["Notte"] in ore_calc: ore_calc[r["Notte"]] += d_n
         
         df_ore = pd.DataFrame([{"Medico": m, "Ore Totali": int(round(h, 0))} for m, h in ore_calc.items()])
         st.table(df_ore)
-        st.markdown(f"**TOTALE ORE PREVISTE DA {mese_nome.upper()}: {int(round(ore_totali_mese_teoriche, 0))} ore**")
+        st.info(f"**ORE TOTALI PREVISTE DAL MESE DI {mese_nome.upper()}: {int(round(ore_tot_mese_cal, 0))} h**")
 
     with tab2:
+        st.subheader("Anteprima Rapida")
+        st.dataframe(st.session_state.db_turni[["Data", "Mattina", "Pomeriggio", "Notte"]], use_container_width=True, hide_index=True)
+
         def genera_pdf():
             buf = io.BytesIO()
             doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.3*cm, bottomMargin=0.3*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
@@ -247,7 +218,6 @@ if not st.session_state.db_turni.empty:
                     f"{r['Pomeriggio']}\n({r['H_P']})" if r['Pomeriggio'] != "---" else "---",
                     f"{r['Notte']}\n({r['H_N']})" if r['Notte'] != "---" else "---"
                 ])
-                
                 d_m, d_p, d_n = calcola_durata(r["H_M"]), calcola_durata(r["H_P"]), calcola_durata(r["H_N"])
                 ore_teoriche_pdf += (d_m + d_p + d_n)
                 if r["Mattina"] in ore_medici_pdf: ore_medici_pdf[r["Mattina"]] += d_m
@@ -270,13 +240,12 @@ if not st.session_state.db_turni.empty:
             data_ore = [["MEDICO", "ORE TOTALI"]]
             for m, h in ore_medici_pdf.items():
                 data_ore.append([m, f"{int(round(h, 0))} h"])
-            
-            data_ore.append([f"TOTALE ORE PREVISTE DA {mese_nome.upper()}", f"{int(round(ore_teoriche_pdf, 0))} h"])
+            data_ore.append([f"ORE TOTALI PREVISTE DA {mese_nome.upper()}", f"{int(round(ore_teoriche_pdf, 0))} h"])
             
             t_ore = Table(data_ore, colWidths=[10*cm, 4*cm])
             t_ore.setStyle(TableStyle([
                 ('GRID', (0,0), (-1,-1), 0.2, colors.grey),
-                ('FONTSIZE', (0,0), (-1,-1), 8),
+                ('FONTSIZE', (0,0), (-1,-1), 8.5),
                 ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
                 ('ALIGN', (0,0), (-1,-1), 'LEFT'),
                 ('ALIGN', (1,0), (1,-1), 'CENTER'),
@@ -289,4 +258,5 @@ if not st.session_state.db_turni.empty:
             doc.build(elements)
             return buf.getvalue()
         
+        st.divider()
         st.download_button("📥 SCARICA PDF (SINGOLA PAGINA)", data=genera_pdf(), file_name=f"Turni_{mese_nome}_{anno_sel}.pdf", use_container_width=True, type="primary")
