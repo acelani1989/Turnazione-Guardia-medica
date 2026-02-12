@@ -94,6 +94,12 @@ with st.sidebar:
     st.divider()
     st.markdown("<div class='sidebar-header'>📅 ASSENZE</div>", unsafe_allow_html=True)
     m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
+    
+    # --- NUOVA FUNZIONE: SVUOTA ASSENZE ---
+    if st.button("🧹 SVUOTA TUTTE LE ASSENZE", use_container_width=True):
+        st.session_state.assenze[m_sel] = []
+        st.rerun()
+
     g_short = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
     cols_sh = st.columns(7)
@@ -143,7 +149,6 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
     res = []
     u_n = None
     
-    # Tracker per vincoli Piscopo/Celani (Punti 9-10)
     vincoli = {"Piscopo_Dom": False, "Celani_Dom": False, "Piscopo_Ven": False, "Celani_Ven": False}
     
     for d in range(1, gg_m + 1):
@@ -158,7 +163,6 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
         
         m_m, p_m, n_m, h_m, h_p, h_n = "---", "---", "---", "---", "---", "---"
         
-        # 9 & 10 - Vincoli Notturni Piscopo e Celani
         if wd == 6 and tipo == "Festivo":
             if not vincoli["Piscopo_Dom"] and "Piscopo" in cand: n_m = "Piscopo"; vincoli["Piscopo_Dom"] = True
             elif not vincoli["Celani_Dom"] and "Celani" in cand: n_m = "Celani"; vincoli["Celani_Dom"] = True
@@ -167,25 +171,18 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
             elif not vincoli["Celani_Ven"] and "Celani" in cand: n_m = "Celani"; vincoli["Celani_Ven"] = True
 
         if tipo == "Festivo":
-            # 2 - Continuità: Mattina e Pomeriggio allo stesso medico
-            if n_m != "---":
-                m_m = random.choice([m for m in cand if m != n_m] or cand)
-            else:
-                m_m = random.choice(cand)
-            p_m = m_m 
+            m_m = random.choice([m for m in cand if m != n_m] or cand) if n_m != "---" else random.choice(cand)
+            p_m = m_m # Punto 2: Continuità 12h
             h_m, h_p = fes_m, fes_p
-            if n_m == "---":
-                n_m = random.choice([m for m in cand if m != m_m] or cand)
+            if n_m == "---": n_m = random.choice([m for m in cand if m != m_m] or cand)
             h_n = fes_n
         elif tipo == "Prefestivo":
             p_m = random.choice(cand) if n_m == "---" else random.choice([m for m in cand if m != n_m] or cand)
             h_p = p_p
-            if n_m == "---":
-                n_m = random.choice([m for m in cand if m != p_m] or cand)
+            if n_m == "---": n_m = random.choice([m for m in cand if m != p_m] or cand)
             h_n = p_n
         else:
-            if n_m == "---":
-                n_m = random.choice(cand)
+            if n_m == "---": n_m = random.choice(cand)
             h_n = f_n
             
         u_n = n_m
@@ -194,10 +191,6 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
 
 # --- 6. RIEPILOGO E PDF ---
 if not st.session_state.db_turni.empty:
-    cols_to_show = ["Data", "Info", "Tipo", "Mattina", "Pomeriggio", "Notte"]
-    for col in cols_to_show:
-        if col not in st.session_state.db_turni.columns: st.session_state.db_turni[col] = ""
-
     t1, t2 = st.tabs(["📝 MODIFICA & ORE", "👁️ ANTEPRIMA PDF"])
     with t1:
         st.session_state.db_turni = st.data_editor(st.session_state.db_turni, column_config={
@@ -220,72 +213,44 @@ if not st.session_state.db_turni.empty:
             if r["Notte"] in ore_m: ore_m[r["Notte"]] += d3
         
         st.markdown(f"### 📊 Ore Totali {mese_nome}: **{int(tot_mese)} h**")
-        
-        # 5 - Segnale Alert Ore (Punto 5)
         for med, ore in ore_m.items():
-            if ore > soglia_ore:
-                st.error(f"⚠️ **{med}** ha superato la soglia: **{int(ore)}h**")
-            elif ore > (soglia_ore - 15):
-                st.warning(f"🔔 **{med}** vicino alla soglia: **{int(ore)}h**")
-
+            if ore > soglia_ore: st.error(f"⚠️ **{med}** ha superato la soglia: **{int(ore)}h**")
+            elif ore > (soglia_ore - 15): st.warning(f"🔔 **{med}** vicino alla soglia: **{int(ore)}h**")
         st.table(pd.DataFrame([{"Medico": m, f"Ore {mese_nome}": f"{int(h)} h"} for m, h in ore_m.items()]))
 
     with t2:
-        st.dataframe(st.session_state.db_turni[cols_to_show], use_container_width=True, hide_index=True)
-        
         def genera_pdf():
             buf = io.BytesIO()
             doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.3*cm, bottomMargin=0.3*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
             elements = []
             styles = getSampleStyleSheet()
-            
             title_style = styles['Title']
             title_style.fontSize = 12
-            title_style.spaceAfter = 4
             elements.append(Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", title_style))
             
             data = [["GIORNO", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
-            t_styles = [
-                ('GRID', (0,0), (-1,-1), 0.3, colors.grey), ('ALIGN', (0,0), (-1,-1), 'CENTER'), 
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTSIZE', (0,0), (-1,-1), 6.5), 
-                ('LEADING', (0,0), (-1,-1), 7.5), ('TOPPADDING', (0,0), (-1,-1), 1),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 1), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
-                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)
-            ]
+            t_styles = [('GRID', (0,0), (-1,-1), 0.3, colors.grey), ('ALIGN', (0,0), (-1,-1), 'CENTER'), 
+                        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTSIZE', (0,0), (-1,-1), 6.5), 
+                        ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]
             
             for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
                 row_idx = i + 1
                 fest_str = f" ({r['Info']})" if r.get('Info') else ""
-                data.append([
-                    f"{r['Data']}{fest_str}", r["Tipo"],
-                    f"{r['Mattina']}\n{r['H_M']}" if r['Mattina'] != "---" else "---",
-                    f"{r['Pomeriggio']}\n{r['H_P']}" if r['Pomeriggio'] != "---" else "---",
-                    f"{r['Notte']}\n{r['H_N']}" if r['Notte'] != "---" else "---"
-                ])
+                data.append([f"{r['Data']}{fest_str}", r["Tipo"], 
+                             f"{r['Mattina']}\n{r['H_M']}" if r['Mattina'] != "---" else "---",
+                             f"{r['Pomeriggio']}\n{r['H_P']}" if r['Pomeriggio'] != "---" else "---",
+                             f"{r['Notte']}\n{r['H_N']}" if r['Notte'] != "---" else "---"])
                 if r["Tipo"] == "Festivo": t_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightpink))
                 elif r["Tipo"] == "Prefestivo": t_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightyellow))
             
-            t = Table(data, colWidths=[3.2*cm, 2.2*cm, 4.9*cm, 4.9*cm, 4.9*cm])
-            t.setStyle(TableStyle(t_styles))
+            t = Table(data, colWidths=[3.2*cm, 2.2*cm, 4.9*cm, 4.9*cm, 4.9*cm]); t.setStyle(TableStyle(t_styles))
             elements.append(t)
-            
             elements.append(Spacer(1, 5))
-            h_style = styles['Heading4']
-            h_style.fontSize = 9
-            h_style.spaceBefore = 0
-            elements.append(Paragraph(f"RIEPILOGO ORE {mese_nome.upper()}", h_style))
-            
             data_ore = [[m, f"{int(h)} h"] for m, h in ore_m.items()]
             data_ore.append([f"TOTALE {mese_nome.upper()}", f"{int(tot_mese)} h"])
             t_ore = Table(data_ore, colWidths=[10*cm, 4*cm])
-            t_ore.setStyle(TableStyle([
-                ('GRID', (0,0), (-1,-1), 0.3, colors.grey), ('FONTSIZE', (0,0), (-1,-1), 7.5),
-                ('TOPPADDING', (0,0), (-1,-1), 1), ('BOTTOMPADDING', (0,0), (-1,-1), 1),
-                ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold')
-            ]))
+            t_ore.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.3, colors.grey), ('FONTSIZE', (0,0), (-1,-1), 7.5), ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold')]))
             elements.append(t_ore)
-            
             doc.build(elements)
             return buf.getvalue()
-            
         st.download_button(f"📥 SCARICA PDF (PAGINA SINGOLA)", genera_pdf(), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True, type="primary")
