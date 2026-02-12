@@ -179,7 +179,7 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
         res.append({"Data": f"{d} {g_short[wd]}", "Info": nome_f, "Tipo": tipo, "Mattina": m_m, "Pomeriggio": p_m, "Notte": n_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
     st.session_state.db_turni = pd.DataFrame(res)
 
-# --- 6. RIEPILOGO E PDF ---
+# --- 6. RIEPILOGO E DOWNLOAD PDF ---
 if not st.session_state.db_turni.empty:
     st.session_state.db_turni = st.data_editor(st.session_state.db_turni, column_config={
         "Data": st.column_config.Column(disabled=True),
@@ -204,24 +204,26 @@ if not st.session_state.db_turni.empty:
     st.markdown(f"### 📊 Ore Totali {mese_nome}: **{int(tot_mese)} h**")
     st.table(pd.DataFrame([{"Medico": m, f"Ore {mese_nome}": f"{int(h)} h"} for m, h in ore_m.items()]))
 
-    def genera_pdf_fuso():
+    def genera_pdf_pagina_singola():
         buf = io.BytesIO()
-        # Margini ultra-ottimizzati per pagina singola
-        doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.4*cm, bottomMargin=0.4*cm, leftMargin=0.5*cm, rightMargin=0.5*cm)
+        # Margini minimi per massimizzare lo spazio verticale
+        doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.3*cm, bottomMargin=0.3*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
         elements = []
         styles = getSampleStyleSheet()
         
-        # Titolo Istituzionale
-        elements.append(Paragraph(f"<b>PIANIFICAZIONE TURNI - {mese_nome.upper()} {anno_sel}</b>", styles['Title']))
-        elements.append(Spacer(1, 10))
+        # Titolo compatto
+        elements.append(Paragraph(f"<b>TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}</b>", styles['Title']))
+        elements.append(Spacer(1, 5))
         
-        # Tabella Turni
+        # Tabella Turni (Font 6.8 per garantire lo spazio del riepilogo)
         data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
         t_styles = [
             ('GRID', (0,0), (-1,-1), 0.5, colors.black),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('FONTSIZE', (0,0), (-1,-1), 7),
+            ('FONTSIZE', (0,0), (-1,-1), 6.8),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+            ('TOPPADDING', (0,0), (-1,-1), 1),
             ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
             ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold')
@@ -229,11 +231,11 @@ if not st.session_state.db_turni.empty:
         
         for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
             idx = i + 1
-            fest_txt = f"\n({r['Info']})" if r['Info'] else ""
+            fest_txt = f" ({r['Info']})" if r['Info'] else ""
             data.append([f"{r['Data']}{fest_txt}", r["Tipo"], 
-                         f"{r['Mattina']}\n{r['H_M']}" if r['Mattina']!="---" else "---",
-                         f"{r['Pomeriggio']}\n{r['H_P']}" if r['Pomeriggio']!="---" else "---",
-                         f"{r['Notte']}\n{r['H_N']}" if r['Notte']!="---" else "---"])
+                         f"{r['Mattina']} {r['H_M']}" if r['Mattina']!="---" else "---",
+                         f"{r['Pomeriggio']} {r['H_P']}" if r['Pomeriggio']!="---" else "---",
+                         f"{r['Notte']} {r['H_N']}" if r['Notte']!="---" else "---"])
             
             if r["Tipo"] == "Festivo": t_styles.append(('BACKGROUND', (0, idx), (-1, idx), colors.lightpink))
             elif r["Tipo"] == "Prefestivo": t_styles.append(('BACKGROUND', (0, idx), (-1, idx), colors.lightyellow))
@@ -242,22 +244,21 @@ if not st.session_state.db_turni.empty:
         table.setStyle(TableStyle(t_styles))
         elements.append(table)
         
-        # Sezione Riepilogo Integrata (Punto richiesto)
-        elements.append(Spacer(1, 12))
-        elements.append(Paragraph(f"<b>RIEPILOGO ORE TOTALI DEL MESE {mese_nome.upper()}</b>", styles['Heading3']))
+        # Riepilogo Ore (Titolo richiesto)
+        elements.append(Spacer(1, 8))
+        elements.append(Paragraph(f"<b>RIEPILOGO ORE TOTALI DEL MESE {mese_nome.upper()}</b>", styles['Heading4']))
         
-        data_riepilogo = [["MEDICO", "ORE TOTALI"]]
+        data_riep = [["MEDICO", "ORE TOTALI"]]
         for m, h in ore_m.items():
-            data_riepilogo.append([m, f"{int(h)} h"])
-        data_riepilogo.append(["TOTALE COMPLESSIVO MESE", f"{int(tot_mese)} h"])
+            data_riep.append([m, f"{int(h)} h"])
+        data_riep.append(["TOTALE COMPLESSIVO", f"{int(tot_mese)} h"])
         
-        t_riep = Table(data_riepilogo, colWidths=[9*cm, 5*cm])
+        t_riep = Table(data_riep, colWidths=[9*cm, 5*cm])
         t_riep.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 0.5, colors.black),
             ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('FONTSIZE', (0,0), (-1,-1), 8.5),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,-1), 8),
             ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold')
         ]))
         elements.append(t_riep)
@@ -266,8 +267,8 @@ if not st.session_state.db_turni.empty:
         return buf.getvalue()
 
     st.download_button(
-        label=f"📥 SCARICA PDF TURNI {mese_nome.upper()} (PAGINA SINGOLA)",
-        data=genera_pdf_fuso(),
+        label=f"📥 SCARICA PDF (PAGINA SINGOLA)",
+        data=genera_pdf_pagina_singola(),
         file_name=f"Turni_{mese_nome}_{anno_sel}.pdf",
         mime="application/pdf",
         use_container_width=True,
