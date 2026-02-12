@@ -11,14 +11,50 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 
-# --- 1. CONFIGURAZIONE ---
-st.set_page_config(page_title="Master Guardia Medica", layout="wide")
+# --- 1. CONFIGURAZIONE E DESIGN ---
+st.set_page_config(page_title="Master Guardia Medica Pro", layout="wide")
 
+# CSS Avanzato per Sfondo Medicale e Card
 st.markdown("""
     <style>
-    .main-title { color: #1a365d; font-family: 'Helvetica', sans-serif; font-weight: 700; font-size: 2.3rem; border-bottom: 3px solid #63b3ed; padding-bottom: 10px; margin-bottom: 25px; }
-    .settings-section { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .sidebar-header { color: #2c5282; font-weight: 700; margin-top: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 10px; }
+    .stApp {
+        background-image: linear-gradient(rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.85)), 
+        url("https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80");
+        background-size: cover;
+        background-attachment: fixed;
+    }
+    .main-title { 
+        color: #2c5282; 
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+        font-weight: 800; 
+        font-size: 2.8rem; 
+        text-align: center;
+        margin-bottom: 30px;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+    }
+    .settings-section { 
+        background-color: rgba(255, 255, 255, 0.95); 
+        padding: 20px; 
+        border-radius: 15px; 
+        border-left: 5px solid #4299e1;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+    }
+    .sidebar-header { 
+        color: #2b6cb0; 
+        font-weight: 700; 
+        border-bottom: 2px solid #bee3f8;
+        padding-bottom: 8px;
+        margin-bottom: 15px;
+    }
+    .stButton>button {
+        border-radius: 8px;
+        transition: all 0.3s;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -65,7 +101,7 @@ if 'db_turni' not in st.session_state: st.session_state.db_turni = pd.DataFrame(
 
 # --- 4. SIDEBAR ---
 with st.sidebar:
-    st.markdown("<div class='sidebar-header'>📅 CONFIGURA PERIODO</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sidebar-header'>⚕️ AREA GESTIONALE</div>", unsafe_allow_html=True)
     anno_sel = st.number_input("Anno:", min_value=2024, max_value=2030, value=2026)
     mesi_ita = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
     mese_nome = st.selectbox("Mese:", mesi_ita, index=1)
@@ -73,9 +109,9 @@ with st.sidebar:
     festivita_anno = get_festivita(anno_sel)
     
     st.divider()
-    st.markdown("<div class='sidebar-header'>👨‍⚕️ GESTIONE STAFF</div>", unsafe_allow_html=True)
-    nuovo_m = st.text_input("Nome Medico:")
-    if st.button("AGGIUNGI MEDICO"):
+    st.markdown("<div class='sidebar-header'>👨‍⚕️ STAFF MEDICO</div>", unsafe_allow_html=True)
+    nuovo_m = st.text_input("Aggiungi Nome:")
+    if st.button("➕ AGGIUNGI"):
         if nuovo_m and nuovo_m not in st.session_state.medici:
             st.session_state.medici.append(nuovo_m)
             st.session_state.assenze[nuovo_m] = []
@@ -84,16 +120,16 @@ with st.sidebar:
     for med in st.session_state.medici:
         c_n, c_d = st.columns([4, 1])
         c_n.write(f"**{med}**")
-        if c_d.button("X", key=f"del_{med}"):
+        if c_d.button("🗑️", key=f"del_{med}"):
             st.session_state.medici.remove(med)
             if med in st.session_state.assenze: del st.session_state.assenze[med]
             st.rerun()
 
     st.divider()
     st.markdown("<div class='sidebar-header'>📅 INDISPONIBILITÀ</div>", unsafe_allow_html=True)
-    m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
+    m_sel = st.selectbox("Medico:", st.session_state.medici)
     
-    # Scorciatoie giorni della settimana
+    # Scorciatoie giorni
     g_short = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
     cols_sh = st.columns(7)
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
@@ -119,29 +155,14 @@ with st.sidebar:
                     st.rerun()
 
     st.divider()
-    st.markdown("<div class='sidebar-header'>💾 BACKUP DATI</div>", unsafe_allow_html=True)
-    
-    # Scarica Backup
+    st.markdown("<div class='sidebar-header'>💾 BACKUP</div>", unsafe_allow_html=True)
     backup_data = {"medici": st.session_state.medici, "assenze": st.session_state.assenze}
-    st.download_button(
-        label="📥 Scarica Backup .json",
-        data=json.dumps(backup_data, indent=4),
-        file_name=f"backup_guardia_{datetime.now().strftime('%Y%m%d')}.json",
-        mime="application/json",
-        use_container_width=True
-    )
-    
-    # Carica Backup
-    uploaded_file = st.file_uploader("📤 Carica Backup .json", type="json")
-    if uploaded_file is not None:
-        try:
-            data = json.load(uploaded_file)
-            st.session_state.medici = data["medici"]
-            st.session_state.assenze = data["assenze"]
-            st.success("Dati caricati!")
-            st.rerun()
-        except:
-            st.error("File non valido.")
+    st.download_button("📥 Scarica JSON", json.dumps(backup_data), f"backup_{mese_nome}.json", "application/json", use_container_width=True)
+    up_file = st.file_uploader("📤 Carica JSON", type="json")
+    if up_file:
+        data = json.load(up_file)
+        st.session_state.medici, st.session_state.assenze = data["medici"], data["assenze"]
+        st.rerun()
 
 # --- 5. INTERFACCIA PRINCIPALE ---
 st.markdown(f"<div class='main-title'>Gestione Turni: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
@@ -162,7 +183,7 @@ with col3:
 
 # --- 6. GENERAZIONE ---
 st.divider()
-if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width=True):
+if st.button("🚀 GENERA / RIGENERA TURNI MENSILI", type="primary", use_container_width=True):
     gg_m = calendar.monthrange(anno_sel, m_idx_v)[1]
     data_list = []
     ultimo_notte = None 
@@ -209,7 +230,7 @@ if not st.session_state.db_turni.empty:
     tab1, tab2 = st.tabs(["📝 Modifica Dati & Ore", "👁️ Anteprima Grafica PDF"])
     
     with tab1:
-        st.subheader("Correzione Manuale Turni")
+        st.subheader("🛠️ Correzione Manuale")
         lista_opzioni = ["---"] + st.session_state.medici
         st.session_state.db_turni = st.data_editor(st.session_state.db_turni, column_config={
             "Data": st.column_config.Column("Giorno", disabled=True),
@@ -220,7 +241,7 @@ if not st.session_state.db_turni.empty:
         }, use_container_width=True, hide_index=True)
 
         st.divider()
-        st.subheader("📊 Riepilogo Ore Mensili")
+        st.subheader("📊 Calcolo Ore Totali del Mese")
         ore_calc = {m: 0.0 for m in st.session_state.medici}
         ore_tot_mese_cal = 0.0
         for _, r in st.session_state.db_turni.iterrows():
@@ -232,10 +253,10 @@ if not st.session_state.db_turni.empty:
         
         df_ore = pd.DataFrame([{"Medico": m, "Ore Totali": int(round(h, 0))} for m, h in ore_calc.items()])
         st.table(df_ore)
-        st.info(f"**ORE TOTALI PREVISTE DAL MESE DI {mese_nome.upper()}: {int(round(ore_tot_mese_cal, 0))} h**")
+        st.info(f"**ORE TOTALI PREVISTE DA {mese_nome.upper()} {anno_sel}: {int(round(ore_tot_mese_cal, 0))} h**")
 
     with tab2:
-        st.subheader("Anteprima Rapida")
+        st.subheader("📋 Riepilogo Grafico")
         st.dataframe(st.session_state.db_turni[["Data", "Mattina", "Pomeriggio", "Notte"]], use_container_width=True, hide_index=True)
 
         def genera_pdf():
@@ -313,4 +334,4 @@ if not st.session_state.db_turni.empty:
             return buf.getvalue()
         
         st.divider()
-        st.download_button("📥 SCARICA PDF (SINGOLA PAGINA)", data=genera_pdf(), file_name=f"Turni_{mese_nome}_{anno_sel}.pdf", use_container_width=True, type="primary")
+        st.download_button("📥 SCARICA PDF PROFESSIONALE", data=genera_pdf(), file_name=f"Turni_{mese_nome}_{anno_sel}.pdf", use_container_width=True, type="primary")
