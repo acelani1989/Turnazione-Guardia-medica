@@ -213,32 +213,36 @@ if not st.session_state.db_turni.empty:
     with tab2:
         def genera_pdf():
             buf = io.BytesIO()
+            # Margini molto stretti per far stare tutto
             doc = SimpleDocTemplate(
                 buf, 
                 pagesize=A4, 
-                topMargin=0.5*cm, 
-                bottomMargin=0.5*cm, 
-                leftMargin=0.5*cm, 
-                rightMargin=0.5*cm
+                topMargin=0.3*cm, 
+                bottomMargin=0.3*cm, 
+                leftMargin=0.4*cm, 
+                rightMargin=0.4*cm
             )
             styles = getSampleStyleSheet()
+            # Stile titolo più compatto
+            title_style = styles['Title']
+            title_style.fontSize = 14
+            title_style.spaceAfter = 6
+            
             elements = []
+            elements.append(Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", title_style))
             
-            # Titolo
-            elements.append(Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", styles['Title']))
-            elements.append(Spacer(1, 12))
-            
-            # Tabella Turni
+            # Tabella Turni - Font ridotto a 7.5 per compattezza
             data_pdf = [["GIORNO", "MATTINA", "POMERIGGIO", "NOTTE"]]
             t_styles = [
-                ('GRID', (0,0), (-1,-1), 0.3, colors.grey),
-                ('FONTSIZE', (0,0), (-1,-1), 8.0),
+                ('GRID', (0,0), (-1,-1), 0.2, colors.grey),
+                ('FONTSIZE', (0,0), (-1,-1), 7.5),
+                ('LEADING', (0,0), (-1,-1), 8.5),
                 ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
                 ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+                ('TOPPADDING', (0,0), (-1,-1), 1),
             ]
             
             for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
@@ -252,15 +256,20 @@ if not st.session_state.db_turni.empty:
                 if r["Tipo"] == "Festivo": t_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightpink))
                 elif r["Tipo"] == "Prefestivo": t_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.lightyellow))
             
-            t_turni = Table(data_pdf, colWidths=[3.5*cm, 5.5*cm, 5.5*cm, 5.5*cm])
+            t_turni = Table(data_pdf, colWidths=[3.2*cm, 5.6*cm, 5.6*cm, 5.6*cm])
             t_turni.setStyle(TableStyle(t_styles))
             elements.append(t_turni)
             
-            # Spazio e Riepilogo Ore
-            elements.append(Spacer(1, 20))
-            elements.append(Paragraph("RIEPILOGO ORE MENSILI", styles['Heading3']))
+            # Spazio ridotto tra tabelle
+            elements.append(Spacer(1, 8))
             
-            # Calcolo ore per il PDF
+            # Sottotitolo riepilogo
+            h_style = styles['Heading3']
+            h_style.fontSize = 10
+            h_style.spaceAfter = 4
+            elements.append(Paragraph("RIEPILOGO ORE MENSILI", h_style))
+            
+            # Calcolo ore
             ore_pdf = {m: 0.0 for m in st.session_state.medici}
             for _, r in st.session_state.db_turni.iterrows():
                 if r["Mattina"] in ore_pdf: ore_pdf[r["Mattina"]] += calcola_durata(r["H_M"])
@@ -274,26 +283,29 @@ if not st.session_state.db_turni.empty:
             tot_h = sum(ore_pdf.values())
             data_ore.append(["TOTALE COMPLESSIVO STAFF", f"{int(round(tot_h, 0))} h"])
             
+            # Tabella ore più compatta
             t_ore = Table(data_ore, colWidths=[10*cm, 4*cm])
             t_ore.setStyle(TableStyle([
-                ('GRID', (0,0), (-1,-1), 0.3, colors.grey),
+                ('GRID', (0,0), (-1,-1), 0.2, colors.grey),
+                ('FONTSIZE', (0,0), (-1,-1), 8),
                 ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
                 ('ALIGN', (0,0), (-1,-1), 'LEFT'),
                 ('ALIGN', (1,0), (1,-1), 'CENTER'),
                 ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
-                ('BACKGROUND', (0,-1), (-1,-1), colors.whitesmoke),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+                ('TOPPADDING', (0,0), (-1,-1), 2),
             ]))
             elements.append(t_ore)
             
             doc.build(elements)
             return buf.getvalue()
         
-        st.subheader("Anteprima Tabellare")
+        st.subheader("Anteprima Rapida")
         st.dataframe(st.session_state.db_turni[["Data", "Mattina", "Pomeriggio", "Notte"]], use_container_width=True, hide_index=True)
         
         st.divider()
         st.download_button(
-            "📥 SCARICA PDF COMPLETO (Turni + Ore)", 
+            "📥 SCARICA PDF (SINGOLA PAGINA)", 
             data=genera_pdf(), 
             file_name=f"Turni_{mese_nome}_{anno_sel}.pdf", 
             use_container_width=True, 
