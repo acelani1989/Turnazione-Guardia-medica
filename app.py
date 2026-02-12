@@ -4,6 +4,7 @@ import calendar
 import random
 import io
 import json
+import base64
 from datetime import datetime
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -22,10 +23,9 @@ st.markdown("""
         background-size: cover;
         background-attachment: fixed;
     }
-    .main-title { color: #1a365d; font-weight: 800; font-size: 2.2rem; text-align: center; margin-bottom: 15px; text-transform: uppercase; }
+    .main-title { color: #1a365d; font-weight: 800; font-size: 2.2rem; text-align: center; margin-bottom: 15px; }
     .settings-section { background-color: rgba(255, 255, 255, 0.95); padding: 12px; border-radius: 10px; border-left: 5px solid #2b6cb0; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 10px; }
     .sidebar-header { color: #2b6cb0; font-weight: 700; border-bottom: 2px solid #bee3f8; padding-bottom: 5px; margin-bottom: 10px; }
-    div[data-baseweb="select"] *, div[data-baseweb="input"] * { color: #000000 !important; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -72,40 +72,16 @@ with st.sidebar:
     st.markdown("<div class='sidebar-header'>⚕️ GESTIONE</div>", unsafe_allow_html=True)
     anno_sel = st.number_input("Anno:", 2024, 2030, 2026)
     mesi_ita = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
-    mese_nome = st.selectbox("Mese:", mesi_ita, index=1)
+    mese_nome = st.selectbox("Mese:", mesi_ita, index=datetime.now().month - 1)
     m_idx_v = mesi_ita.index(mese_nome) + 1
     soglia_ore = st.slider("Soglia Alert Ore:", 100, 250, 160)
     
     st.divider()
-    st.markdown("<div class='sidebar-header'>👨‍⚕️ STAFF</div>", unsafe_allow_html=True)
-    nuovo_m = st.text_input("Aggiungi Medico:")
-    if st.button("➕ AGGIUNGI"):
-        if nuovo_m and nuovo_m not in st.session_state.medici:
-            st.session_state.medici.append(nuovo_m); st.session_state.assenze[nuovo_m] = []; st.rerun()
-    
-    for med in st.session_state.medici:
-        c_n, c_d = st.columns([4, 1])
-        c_n.write(f"**{med}**")
-        if c_d.button("🗑️", key=f"del_{med}"):
-            st.session_state.medici.remove(med); st.rerun()
-
-    st.divider()
-    st.markdown("<div class='sidebar-header'>📅 ASSENZE</div>", unsafe_allow_html=True)
-    m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
+    m_sel = st.selectbox("Assenze Medico:", st.session_state.medici)
     if st.button("🧹 SVUOTA ASSENZE", use_container_width=True):
         st.session_state.assenze[m_sel] = []; st.rerun()
 
-    g_short = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
-    
-    cols_sh = st.columns(7)
-    for i, label in enumerate(g_short):
-        if cols_sh[i].button(label, key=f"sh_{label}"):
-            g_da_c = [sett[i] for sett in cal_data if sett[i] != 0]
-            curr = st.session_state.assenze.get(m_sel, [])
-            st.session_state.assenze[m_sel] = [d for d in curr if d not in g_da_c] if all(d in curr for d in g_da_c) else list(set(curr + g_da_c))
-            st.rerun()
-
     for week in cal_data:
         cols = st.columns(7)
         for i, day in enumerate(week):
@@ -172,87 +148,84 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
             h_n = f_n
             
         u_n = n_m
-        res.append({"Data": f"{d} {g_short[wd]}", "Info": nome_f, "Tipo": tipo, "Mattina": m_m, "Pomeriggio": p_m, "Notte": n_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
+        res.append({"Data": f"{d} {calendar.day_name[wd][:3].upper()}", "Info": nome_f, "Tipo": tipo, "Mattina": m_m, "Pomeriggio": p_m, "Notte": n_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
     st.session_state.db_turni = pd.DataFrame(res)
 
 # --- 6. RIEPILOGO E PDF ---
 if not st.session_state.db_turni.empty:
-    t1, t2 = st.tabs(["📝 MODIFICA & ORE", "👁️ ANTEPRIMA PDF"])
+    t1, t2 = st.tabs(["📝 MODIFICA & ORE", "👁️ ANTEPRIMA & PDF"])
     
+    # Calcolo Ore
+    ore_m = {m: 0.0 for m in st.session_state.medici}
+    for _, r in st.session_state.db_turni.iterrows():
+        if r["Mattina"] in ore_m: ore_m[r["Mattina"]] += calcola_durata(r["H_M"])
+        if r["Pomeriggio"] in ore_m: ore_m[r["Pomeriggio"]] += calcola_durata(r["H_P"])
+        if r["Notte"] in ore_m: ore_m[r["Notte"]] += calcola_durata(r["H_N"])
+
     with t1:
         st.session_state.db_turni = st.data_editor(st.session_state.db_turni, use_container_width=True, hide_index=True)
-        # Calcolo ore (logica stabile)
-        ore_m = {m: 0.0 for m in st.session_state.medici}
-        for _, r in st.session_state.db_turni.iterrows():
-            if r["Mattina"] in ore_m: ore_m[r["Mattina"]] += calcola_durata(r["H_M"])
-            if r["Pomeriggio"] in ore_m: ore_m[r["Pomeriggio"]] += calcola_durata(r["H_P"])
-            if r["Notte"] in ore_m: ore_m[r["Notte"]] += calcola_durata(r["H_N"])
+        st.markdown(f"### 📊 Riepilogo Ore {mese_nome}")
         st.table(pd.DataFrame([{"Medico": m, "Ore": f"{int(h)} h"} for m, h in ore_m.items()]))
 
     with t2:
-        def genera_pdf_singola_pagina():
+        def genera_pdf():
             buf = io.BytesIO()
-            # Margini minimi per stare in una pagina
             doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.5*cm, bottomMargin=0.5*cm, leftMargin=0.5*cm, rightMargin=0.5*cm)
             elements = []
             styles = getSampleStyleSheet()
             
-            # Titolo
-            p_style = styles['Title']
-            p_style.fontSize = 14
-            p_style.textColor = colors.black
-            elements.append(Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", p_style))
+            # Titolo Principale
+            elements.append(Paragraph(f"<b>PROGRAMMAZIONE TURNI - {mese_nome.upper()} {anno_sel}</b>", styles['Title']))
             elements.append(Spacer(1, 10))
             
-            # Dati Tabella
-            data = [["GIORNO", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
+            # Tabella Turni
+            data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
             t_styles = [
                 ('GRID', (0,0), (-1,-1), 0.5, colors.black),
                 ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('FONTSIZE', (0,0), (-1,-1), 7), # Font piccolo per far stare tutto
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-                ('TEXTCOLOR', (0,0), (-1,-1), colors.black),
+                ('FONTSIZE', (0,0), (-1,-1), 8),
+                ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
             ]
             
             for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
-                row_idx = i + 1
-                info = f"\n({r['Info']})" if r['Info'] else ""
-                data.append([
-                    f"{r['Data']}{info}", 
-                    r["Tipo"], 
-                    f"{r['Mattina']}\n{r['H_M']}" if r['Mattina'] != "---" else "---",
-                    f"{r['Pomeriggio']}\n{r['H_P']}" if r['Pomeriggio'] != "---" else "---",
-                    f"{r['Notte']}\n{r['H_N']}" if r['Notte'] != "---" else "---"
-                ])
-                # Colora righe festivi/prefestivi per visibilità
-                if r["Tipo"] == "Festivo": t_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.whitesmoke))
-                elif r["Tipo"] == "Prefestivo": t_styles.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.ghostwhite))
-
-            table = Table(data, colWidths=[3.5*cm, 2.5*cm, 4.5*cm, 4.5*cm, 4.5*cm])
+                idx = i + 1
+                row = [f"{r['Data']}\n{r['Info']}", r["Tipo"], 
+                       f"{r['Mattina']}\n{r['H_M']}" if r['Mattina']!="---" else "---",
+                       f"{r['Pomeriggio']}\n{r['H_P']}" if r['Pomeriggio']!="---" else "---",
+                       f"{r['Notte']}\n{r['H_N']}" if r['Notte']!="---" else "---"]
+                data.append(row)
+                
+                # Colori righe
+                if r["Tipo"] == "Festivo": t_styles.append(('BACKGROUND', (0, idx), (-1, idx), colors.lightpink))
+                elif r["Tipo"] == "Prefestivo": t_styles.append(('BACKGROUND', (0, idx), (-1, idx), colors.lightyellow))
+            
+            table = Table(data, colWidths=[3*cm, 2.5*cm, 4.8*cm, 4.8*cm, 4.8*cm])
             table.setStyle(TableStyle(t_styles))
             elements.append(table)
             
-            # Riepilogo ore in fondo (compatto)
-            elements.append(Spacer(1, 10))
-            data_ore = [[m, f"{int(h)} h"] for m, h in ore_m.items()]
-            t_ore = Table([["MEDICO", "TOT ORE"]] + data_ore, colWidths=[5*cm, 3*cm])
+            # Riepilogo Ore
+            elements.append(Spacer(1, 15))
+            elements.append(Paragraph(f"<b>RIEPILOGO ORE DEL MESE CORRENTE - {mese_nome.upper()}</b>", styles['Heading3']))
+            
+            data_ore = [["MEDICO", "TOTALE ORE"]] + [[m, f"{int(h)} h"] for m, h in ore_m.items()]
+            t_ore = Table(data_ore, colWidths=[6*cm, 4*cm])
             t_ore.setStyle(TableStyle([
                 ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-                ('FONTSIZE', (0,0), (-1,-1), 7),
-                ('ALIGN', (0,0), (-1,-1), 'CENTER')
+                ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('FONTSIZE', (0,0), (-1,-1), 9)
             ]))
             elements.append(t_ore)
             
             doc.build(elements)
             return buf.getvalue()
 
-        st.download_button(
-            label="📥 SCARICA PDF (PAGINA SINGOLA)",
-            data=genera_pdf_singola_pagina(),
-            file_name=f"Turni_{mese_nome}_{anno_sel}.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-            type="primary"
-        )
+        # Visualizzazione Anteprima
+        pdf_bytes = genera_pdf()
+        base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+        st.markdown(pdf_display, unsafe_allow_html=True)
+        
+        st.download_button("📥 SCARICA PDF UFFICIALE", pdf_bytes, f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True, type="primary")
