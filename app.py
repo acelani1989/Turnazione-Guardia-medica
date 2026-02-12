@@ -11,66 +11,63 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 
-# --- 1. CONFIGURAZIONE GRAFICA AD ALTA VISIBILITÀ ---
+# --- 1. CONFIGURAZIONE GRAFICA MIRATA ---
 st.set_page_config(page_title="Gestione Turni Medica", layout="wide")
 
 st.markdown("""
     <style>
-    /* Sfondo e Testi Principali */
+    /* Sfondo globale bianco per chiarezza */
     .stApp { background-color: #FFFFFF; }
-    h1, h2, h3, label, p, span { color: #000000 !important; font-weight: 600; }
-
-    /* SIDEBAR: SFONDO BLU NOTTE */
+    
+    /* Sidebar: Sfondo Blu Scuro */
     [data-testid="stSidebar"] { 
         background-color: #001f3f !important; 
-        min-width: 380px;
     }
     
-    /* TESTO SIDEBAR: BIANCO PURO */
-    [data-testid="stSidebar"] * { 
-        color: #ffffff !important; 
-    }
-
-    /* TITOLI SIDEBAR: GIALLO ACCESO */
+    /* Titoli Sidebar in Giallo */
     .sidebar-header { 
         color: #FFD700 !important; 
         font-weight: 900; 
-        font-size: 1.3rem !important;
-        border-bottom: 3px solid #FFD700;
+        font-size: 1.2rem !important;
+        border-bottom: 2px solid #FFD700;
         margin-bottom: 15px;
         padding-top: 10px;
     }
 
-    /* BOTTONI CALENDARIO SIDEBAR: RENDIAMOLI VISIBILI */
-    div[st-vertical-block] button, .stButton > button {
-        border: 2px solid #ffffff !important;
+    /* FIX: Testo nei menu a tendina (Mese) e Input (Anno) deve essere NERO */
+    div[data-baseweb="select"] *, div[data-baseweb="input"] * {
+        color: #000000 !important;
+    }
+    
+    /* Testo etichette nella sidebar in BIANCO */
+    [data-testid="stSidebar"] label p {
+        color: #FFFFFF !important;
+        font-weight: bold;
+    }
+
+    /* Calendario Sidebar: bottoni visibili */
+    div[st-vertical-block] button {
+        border: 1px solid #ffffff !important;
         background-color: #1a365d !important;
         color: #ffffff !important;
-        font-weight: bold !important;
-        font-size: 1.1rem !important;
     }
 
-    /* BOTTONE GIORNO SELEZIONATO (ASSENZA) */
-    .stButton > button[kind="primary"] {
-        background-color: #ff4b4b !important;
-        border: 2px solid #ffffff !important;
-    }
-
-    /* BOX IMPOSTAZIONI CENTRALI */
+    /* Area principale: contrasto alto */
+    h1, h2, h3, .stMarkdown p { color: #000000 !important; }
+    
     .settings-section { 
         background-color: #f1f5f9; 
         padding: 15px; 
         border-radius: 10px; 
         border: 2px solid #cbd5e1; 
-        margin-bottom: 10px; 
     }
     </style>
     """, unsafe_allow_html=True)
 
-# Immagine Intestazione Professionale
+# Immagine Studio Medico
 st.image("https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?auto=format&fit=crop&q=80&w=1500&h=300", use_container_width=True)
 
-# --- 2. LOGICA ORIGINALE ---
+# --- 2. FUNZIONI LOGICHE ---
 def get_festivita(anno):
     def calcola_pasqua(y):
         a, b, c = y % 19, y // 100, y % 100
@@ -108,12 +105,12 @@ if 'medici' not in st.session_state: st.session_state.medici = ["Piscopo", "Cela
 if 'assenze' not in st.session_state: st.session_state.assenze = {m: [] for m in st.session_state.medici}
 if 'db_turni' not in st.session_state: st.session_state.db_turni = pd.DataFrame()
 
-# --- 4. SIDEBAR CON TUTTE LE IMPOSTAZIONI ---
+# --- 4. SIDEBAR ---
 with st.sidebar:
-    st.markdown("<div class='sidebar-header'>📅 PERIODO</div>", unsafe_allow_html=True)
-    anno_sel = st.number_input("Anno", 2024, 2030, 2026)
+    st.markdown("<div class='sidebar-header'>📅 CONFIGURAZIONE</div>", unsafe_allow_html=True)
+    anno_sel = st.number_input("Seleziona Anno", 2024, 2030, 2026)
     mesi_ita = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
-    mese_nome = st.selectbox("Mese", mesi_ita, index=1)
+    mese_nome = st.selectbox("Seleziona Mese", mesi_ita, index=1)
     m_idx_v = mesi_ita.index(mese_nome) + 1
     
     st.markdown("<div class='sidebar-header'>👨‍⚕️ STAFF</div>", unsafe_allow_html=True)
@@ -126,15 +123,14 @@ with st.sidebar:
     
     for med in st.session_state.medici:
         c_n, c_d = st.columns([4, 1])
-        c_n.write(f"**{med}**")
-        if c_d.button("🗑️", key=f"del_{med}"):
+        c_n.markdown(f"**{med}**")
+        if c_d.button("X", key=f"del_{med}"):
             st.session_state.medici.remove(med)
             st.rerun()
 
-    st.markdown("<div class='sidebar-header'>🚫 INDISPONIBILITÀ</div>", unsafe_allow_html=True)
-    m_sel = st.selectbox("Seleziona Medico", st.session_state.medici)
+    st.markdown("<div class='sidebar-header'>🚫 ASSENZE</div>", unsafe_allow_html=True)
+    m_sel = st.selectbox("Medico per assenze", st.session_state.medici)
     
-    # Scorciatoie giorni
     g_short = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
     cols_sh = st.columns(7)
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
@@ -145,13 +141,11 @@ with st.sidebar:
             st.session_state.assenze[m_sel] = [d for d in current if d not in giorni] if all(d in current for d in giorni) else list(set(current + giorni))
             st.rerun()
 
-    # CALENDARIO VISIBILE
     for week in cal_data:
         cols = st.columns(7)
         for i, day in enumerate(week):
             if day != 0:
                 is_abs = day in st.session_state.assenze.get(m_sel, [])
-                # Forza lo stile primario per evidenziare le assenze
                 if cols[i].button(str(day), key=f"d_{day}", type="primary" if is_abs else "secondary"):
                     if is_abs: st.session_state.assenze[m_sel].remove(day)
                     else: st.session_state.assenze[m_sel].append(day)
@@ -166,7 +160,7 @@ with st.sidebar:
         st.rerun()
 
 # --- 5. INTERFACCIA PRINCIPALE ---
-st.markdown(f"<h1>Gestione Turni: {mese_nome} {anno_sel}</h1>", unsafe_allow_html=True)
+st.markdown(f"<h1>Turni Studio Medico: {mese_nome} {anno_sel}</h1>", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -175,15 +169,15 @@ with col1:
 with col2:
     st.markdown("<div class='settings-section'><b>🕒 PREFESTIVI</b>", unsafe_allow_html=True)
     p_p = st.text_input("Pomeriggio", "10:00 - 20:00")
-    p_n = st.text_input("Notte", "20:00 - 08:00", key="pn_main")
+    p_n = st.text_input("Notte", "20:00 - 08:00", key="pn_m")
 with col3:
     st.markdown("<div class='settings-section'><b>🚩 FESTIVI</b>", unsafe_allow_html=True)
     fes_m = st.text_input("Mattina", "08:00 - 14:00")
     fes_p = st.text_input("Pomeriggio", "14:00 - 20:00")
-    fes_n = st.text_input("Notte", "20:00 - 08:00", key="fn_main")
+    fes_n = st.text_input("Notte", "20:00 - 08:00", key="fn_m")
 
 st.divider()
-if st.button("🚀 GENERA CALENDARIO TURNI", type="primary", use_container_width=True):
+if st.button("🚀 GENERA CALENDARIO", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
     gg_m = calendar.monthrange(anno_sel, m_idx_v)[1]
     res = []
@@ -195,10 +189,8 @@ if st.button("🚀 GENERA CALENDARIO TURNI", type="primary", use_container_width
         disp = [m for m in st.session_state.medici if d not in st.session_state.assenze.get(m, [])]
         if not disp: disp = st.session_state.medici
         cand = [m for m in disp if m != u_n] or disp
-        
         m_m, p_m, n_m = "---", "---", "---"
         h_m, h_p, h_n = "---", "---", "---"
-        
         if tipo == "Festivo":
             m_m = random.choice(cand); h_m = fes_m
             p_m = random.choice([m for m in disp if m != m_m] or disp); h_p = fes_p
@@ -208,13 +200,12 @@ if st.button("🚀 GENERA CALENDARIO TURNI", type="primary", use_container_width
             n_m = random.choice([m for m in cand if m != p_m] or cand); h_n = p_n
         else:
             n_m = random.choice(cand); h_n = f_n
-            
         u_n = n_m
         res.append({"Data": f"{d} {g_short[wd]}", "Tipo": tipo, "Mattina": m_m, "Pomeriggio": p_m, "Notte": n_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
     st.session_state.db_turni = pd.DataFrame(res)
 
 if not st.session_state.db_turni.empty:
-    tab1, tab2 = st.tabs(["📝 MODIFICA & ORE", "👁️ ANTEPRIMA PDF"])
+    tab1, tab2 = st.tabs(["📝 MODIFICA & ORE", "👁️ PDF"])
     with tab1:
         st.session_state.db_turni = st.data_editor(st.session_state.db_turni, use_container_width=True, hide_index=True)
         ore = {m: 0.0 for m in st.session_state.medici}
@@ -224,10 +215,8 @@ if not st.session_state.db_turni.empty:
                 if m in ore: ore[m] += h
         st.write("### 📊 Riepilogo Ore")
         st.table(pd.DataFrame([{"Medico": m, "Ore": int(h)} for m, h in ore.items()]))
-
     with tab2:
         st.dataframe(st.session_state.db_turni[["Data", "Mattina", "Pomeriggio", "Notte"]], use_container_width=True)
-        
         def make_pdf():
             buf = io.BytesIO()
             doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.5*cm, bottomMargin=0.5*cm)
@@ -242,5 +231,4 @@ if not st.session_state.db_turni.empty:
             elements.append(t)
             doc.build(elements)
             return buf.getvalue()
-        
         st.download_button("📥 SCARICA PDF", make_pdf(), f"Turni_{mese_nome}.pdf", "application/pdf", type="primary", use_container_width=True)
