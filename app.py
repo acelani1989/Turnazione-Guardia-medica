@@ -143,7 +143,8 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
     for d in range(1, gg_m + 1):
         dt = datetime(anno_sel, m_idx_v, d)
         wd = dt.weekday()
-        nome_f = festivita_anno.get((d, m_idx_v), "")
+        # Assicura che la colonna Info esista sempre
+        nome_f = fest.get((d, m_idx_v), "")
         tipo = "Festivo" if (wd == 6 or (d, m_idx_v) in fest) else ("Prefestivo" if (wd == 5 or (d==24 and m_idx_v==2)) else "Feriale")
         disp = [m for m in st.session_state.medici if d not in st.session_state.assenze.get(m, [])]
         if not disp: disp = st.session_state.medici
@@ -161,11 +162,27 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
             n_m = random.choice(cand); h_n = f_n
             
         u_n = n_m
-        res.append({"Data": f"{d} {g_short[wd]}", "Info": fest.get((d, m_idx_v), ""), "Tipo": tipo, "Mattina": m_m, "Pomeriggio": p_m, "Notte": n_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
+        res.append({
+            "Data": f"{d} {g_short[wd]}", 
+            "Info": nome_f, 
+            "Tipo": tipo, 
+            "Mattina": m_m, 
+            "Pomeriggio": p_m, 
+            "Notte": n_m, 
+            "H_M": h_m, 
+            "H_P": h_p, 
+            "H_N": h_n
+        })
     st.session_state.db_turni = pd.DataFrame(res)
 
 # --- 6. RIEPILOGO E PDF ---
 if not st.session_state.db_turni.empty:
+    # Check di sicurezza per colonne mancanti
+    cols_to_show = ["Data", "Info", "Tipo", "Mattina", "Pomeriggio", "Notte"]
+    for col in cols_to_show:
+        if col not in st.session_state.db_turni.columns:
+            st.session_state.db_turni[col] = ""
+
     t1, t2 = st.tabs(["📝 MODIFICA & ORE", "👁️ ANTEPRIMA PDF"])
     with t1:
         st.session_state.db_turni = st.data_editor(st.session_state.db_turni, column_config={
@@ -191,7 +208,7 @@ if not st.session_state.db_turni.empty:
         st.table(pd.DataFrame([{"Medico": m, f"Ore {mese_nome}": f"{int(h)} h"} for m, h in ore_m.items()]))
 
     with t2:
-        st.dataframe(st.session_state.db_turni[["Data", "Info", "Tipo", "Mattina", "Pomeriggio", "Notte"]], use_container_width=True, hide_index=True)
+        st.dataframe(st.session_state.db_turni[cols_to_show], use_container_width=True, hide_index=True)
         
         def genera_pdf():
             buf = io.BytesIO()
@@ -200,7 +217,6 @@ if not st.session_state.db_turni.empty:
             styles = getSampleStyleSheet()
             elements.append(Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", styles['Title']))
             
-            # Tabella Turni con Orari e Tipologia
             data = [["GIORNO", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
             t_styles = [('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('ALIGN', (0,0), (-1,-1), 'CENTER'), 
                         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTSIZE', (0,0), (-1,-1), 7), 
@@ -208,7 +224,7 @@ if not st.session_state.db_turni.empty:
             
             for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
                 row_idx = i + 1
-                fest_str = f"\n({r['Info']})" if r['Info'] else ""
+                fest_str = f"\n({r['Info']})" if r.get('Info') else ""
                 data.append([
                     f"{r['Data']}{fest_str}", 
                     r["Tipo"],
@@ -223,7 +239,6 @@ if not st.session_state.db_turni.empty:
             t.setStyle(TableStyle(t_styles))
             elements.append(t)
             
-            # Riepilogo Ore
             elements.append(Spacer(1, 10))
             elements.append(Paragraph(f"RIEPILOGO ORE {mese_nome.upper()}", styles['Heading4']))
             data_ore = [[m, f"{int(h)} h"] for m, h in ore_m.items()]
