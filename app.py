@@ -11,44 +11,52 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 
-# --- 1. CONFIGURAZIONE GRAFICA (ALTO CONTRASTO) ---
-st.set_page_config(page_title="Master Guardia Medica", layout="wide")
+# --- 1. FIX GRAFICA: CONTRASTO MASSIMO ---
+st.set_page_config(page_title="Gestione Turni Medica", layout="wide")
 
 st.markdown("""
     <style>
-    /* Sfondo chiaro per massima leggibilità */
+    /* Sfondo principale bianco */
     .stApp { background-color: #FFFFFF; }
     
-    /* Testi neri e netti */
-    h1, h2, h3, p, span, label { color: #000000 !important; font-family: 'Helvetica', sans-serif; }
-    
-    /* Sidebar scura ma con testi bianchi leggibili */
-    [data-testid="stSidebar"] { background-color: #1a365d !important; }
-    [data-testid="stSidebar"] * { color: white !important; }
-    
+    /* Sidebar: Sfondo Blu Scuro e Testi Chiari */
+    [data-testid="stSidebar"] { 
+        background-color: #001f3f !important; 
+        min-width: 350px;
+    }
+    /* Forza colore testo bianco nella sidebar per renderlo visibile */
+    [data-testid="stSidebar"] * { 
+        color: #ffffff !important; 
+        font-size: 1.05rem !important;
+    }
+    /* Titoli sidebar in Giallo per risaltare */
     .sidebar-header { 
-        color: #63b3ed !important; 
-        font-weight: 800; 
-        border-bottom: 2px solid #2d3748; 
+        color: #FFD700 !important; 
+        font-weight: 900; 
+        border-bottom: 2px solid #FFD700; 
         padding-bottom: 5px; 
-        margin-bottom: 15px; 
+        margin-top: 20px;
+        font-size: 1.2rem !important;
     }
     
-    /* Box per gli orari */
+    /* Area centrale: Testo Nero su Bianco */
+    h1, h2, h3, label, p { color: #000000 !important; }
+    
+    /* Box orari */
     .settings-section { 
-        background-color: #f7fafc; 
+        background-color: #f8f9fa; 
         padding: 15px; 
-        border-radius: 10px; 
-        border: 2px solid #e2e8f0; 
+        border-radius: 8px; 
+        border: 2px solid #dee2e6; 
         margin-bottom: 10px; 
     }
     </style>
     """, unsafe_allow_html=True)
 
-# Immagine Studio Medico in alto
+# Immagine Studio Medico
 st.image("https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?auto=format&fit=crop&q=80&w=1500&h=300", use_container_width=True)
 
-# --- 2. FUNZIONI (LE TUE ORIGINALI) ---
+# --- 2. FUNZIONI LOGICHE (ORIGINALI) ---
 def get_festivita(anno):
     def calcola_pasqua(y):
         a, b, c = y % 19, y // 100, y % 100
@@ -86,18 +94,17 @@ if 'medici' not in st.session_state: st.session_state.medici = ["Piscopo", "Cela
 if 'assenze' not in st.session_state: st.session_state.assenze = {m: [] for m in st.session_state.medici}
 if 'db_turni' not in st.session_state: st.session_state.db_turni = pd.DataFrame()
 
-# --- 4. SIDEBAR (TUTTE LE TUE IMPOSTAZIONI) ---
+# --- 4. SIDEBAR (CONTRASTO MASSIMO) ---
 with st.sidebar:
-    st.markdown("<div class='sidebar-header'>📅 CONFIGURAZIONE</div>", unsafe_allow_html=True)
-    anno_sel = st.number_input("Anno:", 2024, 2030, 2026)
+    st.markdown("<div class='sidebar-header'>📅 PERIODO</div>", unsafe_allow_html=True)
+    anno_sel = st.number_input("Anno", 2024, 2030, 2026)
     mesi_ita = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
-    mese_nome = st.selectbox("Mese:", mesi_ita, index=1)
+    mese_nome = st.selectbox("Mese", mesi_ita, index=1)
     m_idx_v = mesi_ita.index(mese_nome) + 1
     
-    st.divider()
     st.markdown("<div class='sidebar-header'>👨‍⚕️ STAFF</div>", unsafe_allow_html=True)
-    nuovo_m = st.text_input("Nuovo Medico:")
-    if st.button("AGGIUNGI"):
+    nuovo_m = st.text_input("Aggiungi Medico")
+    if st.button("AGGIUNGI ORA"):
         if nuovo_m and nuovo_m not in st.session_state.medici:
             st.session_state.medici.append(nuovo_m)
             st.session_state.assenze[nuovo_m] = []
@@ -105,16 +112,15 @@ with st.sidebar:
     
     for med in st.session_state.medici:
         c_n, c_d = st.columns([4, 1])
-        c_n.write(med)
+        c_n.write(f"**{med}**")
         if c_d.button("X", key=f"del_{med}"):
             st.session_state.medici.remove(med)
             st.rerun()
 
-    st.divider()
     st.markdown("<div class='sidebar-header'>🚫 INDISPONIBILITÀ</div>", unsafe_allow_html=True)
-    m_sel = st.selectbox("Medico:", st.session_state.medici)
+    m_sel = st.selectbox("Seleziona Medico", st.session_state.medici)
     
-    # Scorciatoie LUN-DOM
+    # Scorciatoie
     g_short = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
     cols_sh = st.columns(7)
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
@@ -125,7 +131,7 @@ with st.sidebar:
             st.session_state.assenze[m_sel] = [d for d in current if d not in giorni] if all(d in current for d in giorni) else list(set(current + giorni))
             st.rerun()
 
-    # Calendario Mini
+    # Calendario
     for week in cal_data:
         cols = st.columns(7)
         for i, day in enumerate(week):
@@ -136,10 +142,9 @@ with st.sidebar:
                     else: st.session_state.assenze[m_sel].append(day)
                     st.rerun()
 
-    st.divider()
-    st.markdown("<div class='sidebar-header'>💾 BACKUP</div>", unsafe_allow_html=True)
-    st.download_button("📥 SCARICA BACKUP", json.dumps({"medici": st.session_state.medici, "assenze": st.session_state.assenze}), "backup.json", use_container_width=True)
-    up = st.file_uploader("📤 CARICA BACKUP", type="json")
+    st.markdown("<div class='sidebar-header'>💾 BACKUP DATI</div>", unsafe_allow_html=True)
+    st.download_button("📥 SCARICA JSON", json.dumps({"medici": st.session_state.medici, "assenze": st.session_state.assenze}), "backup_turni.json", use_container_width=True)
+    up = st.file_uploader("📤 CARICA JSON", type="json")
     if up:
         d = json.load(up)
         st.session_state.medici, st.session_state.assenze = d["medici"], d["assenze"]
@@ -151,30 +156,30 @@ st.markdown(f"<h1>Gestione Turni: {mese_nome} {anno_sel}</h1>", unsafe_allow_htm
 col1, col2, col3 = st.columns(3)
 with col1:
     st.markdown("<div class='settings-section'><b>🏠 FERIALI</b>", unsafe_allow_html=True)
-    f_n = st.text_input("Notte", value="20:00 - 08:00")
+    f_n = st.text_input("Notte", "20:00 - 08:00")
 with col2:
     st.markdown("<div class='settings-section'><b>🕒 PREFESTIVI</b>", unsafe_allow_html=True)
-    p_p = st.text_input("Pomeriggio", value="10:00 - 20:00")
-    p_n = st.text_input("Notte", value="20:00 - 08:00", key="pn")
+    p_p = st.text_input("Pomeriggio", "10:00 - 20:00")
+    p_n = st.text_input("Notte", "20:00 - 08:00", key="pn_main")
 with col3:
     st.markdown("<div class='settings-section'><b>🚩 FESTIVI</b>", unsafe_allow_html=True)
-    fes_m = st.text_input("Mattina", value="08:00 - 14:00")
-    fes_p = st.text_input("Pomeriggio", value="14:00 - 20:00")
-    fes_n = st.text_input("Notte", value="20:00 - 08:00", key="fn")
+    fes_m = st.text_input("Mattina", "08:00 - 14:00")
+    fes_p = st.text_input("Pomeriggio", "14:00 - 20:00")
+    fes_n = st.text_input("Notte", "20:00 - 08:00", key="fn_main")
 
 st.divider()
 if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
     gg_m = calendar.monthrange(anno_sel, m_idx_v)[1]
     res = []
-    u_notte = None
+    u_n = None
     for d in range(1, gg_m + 1):
         dt = datetime(anno_sel, m_idx_v, d)
         wd = dt.weekday()
         tipo = "Festivo" if (wd == 6 or (d, m_idx_v) in fest) else ("Prefestivo" if wd == 5 else "Feriale")
         disp = [m for m in st.session_state.medici if d not in st.session_state.assenze.get(m, [])]
         if not disp: disp = st.session_state.medici
-        cand = [m for m in disp if m != u_notte] or disp
+        cand = [m for m in disp if m != u_n] or disp
         
         m_m, p_m, n_m = "---", "---", "---"
         h_m, h_p, h_n = "---", "---", "---"
@@ -189,7 +194,7 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
         else:
             n_m = random.choice(cand); h_n = f_n
             
-        u_notte = n_m
+        u_n = n_m
         res.append({"Data": f"{d} {g_short[wd]}", "Tipo": tipo, "Mattina": m_m, "Pomeriggio": p_m, "Notte": n_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
     st.session_state.db_turni = pd.DataFrame(res)
 
@@ -202,7 +207,7 @@ if not st.session_state.db_turni.empty:
             d1, d2, d3 = calcola_durata(r["H_M"]), calcola_durata(r["H_P"]), calcola_durata(r["H_N"])
             for m, h in [(r["Mattina"], d1), (r["Pomeriggio"], d2), (r["Notte"], d3)]:
                 if m in ore: ore[m] += h
-        st.write("### 📊 Riepilogo Ore Mensili")
+        st.write("### 📊 Riepilogo Ore")
         st.table(pd.DataFrame([{"Medico": m, "Ore": int(h)} for m, h in ore.items()]))
 
     with tab2:
@@ -210,7 +215,7 @@ if not st.session_state.db_turni.empty:
         
         def make_pdf():
             buf = io.BytesIO()
-            doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1*cm, bottomMargin=1*cm)
+            doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.5*cm, bottomMargin=0.5*cm)
             elements = [Paragraph(f"TURNI {mese_nome.upper()} {anno_sel}", getSampleStyleSheet()['Title'])]
             data = [["GIORNO", "MATTINA", "POMERIGGIO", "NOTTE"]]
             styles = [('GRID', (0,0), (-1,-1), 0.5, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue)]
