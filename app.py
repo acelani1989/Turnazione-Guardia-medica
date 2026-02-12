@@ -93,7 +93,6 @@ with st.sidebar:
     st.markdown("<div class='sidebar-header'>📅 INDISPONIBILITÀ</div>", unsafe_allow_html=True)
     m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
     
-    # Scorciatoie giorni
     st.write("Seleziona tutti i:")
     g_short = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
     cols_sh = st.columns(7)
@@ -150,7 +149,7 @@ with col2:
     p_n = st.text_input("Notte", value="20:00 - 08:00", key="kp_n")
 with col3:
     st.markdown("<div class='settings-section'><b>🚩 FESTIVI</b>", unsafe_allow_html=True)
-    div_f = st.toggle("Dividi Mattina", value=True)
+    # Rimosso toggle Dividi Mattina
     fes_m = st.text_input("Mattina", value="08:00 - 14:00", key="kf_m")
     fes_p = st.text_input("Pomeriggio", value="14:00 - 20:00", key="kf_p")
     fes_n = st.text_input("Notte", value="20:00 - 08:00", key="kf_n")
@@ -174,26 +173,31 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
         nome_fest = f" ({festivita_anno[(d, m_idx_v)]})" if is_festivo_nazionale else ""
         disp_oggi = [m for m in st.session_state.medici if d not in st.session_state.assenze.get(m, [])]
         if not disp_oggi: disp_oggi = st.session_state.medici
-        disp_notte = [m for m in disp_oggi if m != ultimo_notte]
-        if not disp_notte: disp_notte = disp_oggi
+        
+        # Filtro per evitare smonto notte (non assegnare chi ha lavorato la notte prima)
+        disp_senza_smonto = [m for m in disp_oggi if m != ultimo_notte]
+        if not disp_senza_smonto: disp_senza_smonto = disp_oggi
 
         if tipo == "Festivo":
-            m_mat_list = random.sample(disp_oggi, min(2, len(disp_oggi))) if div_f else [random.choice(disp_oggi)]
-            mat_txt = " / ".join(m_mat_list)
-            rest_p = [m for m in disp_oggi if m not in m_mat_list]
+            # Mattina: un solo medico
+            mat_m = random.choice(disp_senza_smonto)
+            # Pomeriggio: diverso da mattina
+            rest_p = [m for m in disp_oggi if m != mat_m]
             pom_m = random.choice(rest_p) if rest_p else random.choice(disp_oggi)
-            rest_n = [m for m in disp_notte if m != pom_m and m not in m_mat_list]
-            not_m = random.choice(rest_n) if rest_n else random.choice(disp_notte)
+            # Notte: diverso da pomeriggio e da chi ha fatto la notte prima
+            rest_n = [m for m in disp_senza_smonto if m != pom_m and m != mat_m]
+            not_m = random.choice(rest_n) if rest_n else (random.choice([m for m in disp_senza_smonto if m != pom_m]) if len(disp_senza_smonto) > 1 else random.choice(disp_senza_smonto))
             h_m, h_p, h_n = fes_m, fes_p, fes_n
+            mat_txt = mat_m
         elif tipo == "Prefestivo":
             mat_txt, h_m = "---", "---"
-            pom_m = random.choice(disp_oggi)
-            rest_n = [m for m in disp_notte if m != pom_m]
-            not_m = random.choice(rest_n) if rest_n else random.choice(disp_notte)
+            pom_m = random.choice(disp_senza_smonto)
+            rest_n = [m for m in disp_senza_smonto if m != pom_m]
+            not_m = random.choice(rest_n) if rest_n else random.choice(disp_senza_smonto)
             h_p, h_n = p_p, p_n
         else:
             mat_txt, h_m, pom_m, h_p = "---", "---", "---", "---"
-            not_m, h_n = random.choice(disp_notte), f_n
+            not_m, h_n = random.choice(disp_senza_smonto), f_n
 
         ultimo_notte = not_m
         data_list.append({"Data": f"{d} {giorni_sett[wd]}{nome_fest}", "Tipo": tipo, "Mattina": mat_txt, "Pomeriggio": pom_m, "Notte": not_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
@@ -218,17 +222,17 @@ if not st.session_state.db_turni.empty:
         st.subheader("📊 Riepilogo Ore Mensili")
         ore_calc = {m: 0.0 for m in st.session_state.medici}
         for _, r in st.session_state.db_turni.iterrows():
-            # CORREZIONE ERRORE NameError QUI SOTTO
+            if r["Mattina"] in ore_calc: ore_calc[r["Mattina"]] += calcola_durata(r["H_M"])
             if r["Pomeriggio"] in ore_calc: ore_calc[r["Pomeriggio"]] += calcola_durata(r["H_P"])
             if r["Notte"] in ore_calc: ore_calc[r["Notte"]] += calcola_durata(r["H_N"])
-            if "/" in str(r["Mattina"]):
-                for p in r["Mattina"].split("/"):
-                    name = p.strip()
-                    if name in ore_calc: ore_calc[name] += (calcola_durata(r["H_M"]) / 2)
-            elif r["Mattina"] in ore_calc: ore_calc[r["Mattina"]] += calcola_durata(r["H_M"])
         
         df_ore = pd.DataFrame([{"Medico": m, "Ore Totali": int(round(h, 0))} for m, h in ore_calc.items()])
+        
+        # AGGIUNTA RIGA TOTALE COMPLESSIVO
+        totale_complessivo = df_ore["Ore Totali"].sum()
+        
         st.table(df_ore)
+        st.markdown(f"**TOTALE ORE MESE (TUTTO LO STAFF): {totale_complessivo} ore**")
 
     with tab2:
         st.subheader("Simulazione Layout PDF")
