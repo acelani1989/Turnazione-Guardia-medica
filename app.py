@@ -89,6 +89,60 @@ with st.sidebar:
             if med in st.session_state.assenze: del st.session_state.assenze[med]
             st.rerun()
 
+    st.divider()
+    st.markdown("<div class='sidebar-header'>📅 INDISPONIBILITÀ</div>", unsafe_allow_html=True)
+    m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
+    
+    # Scorciatoie giorni della settimana
+    g_short = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
+    cols_sh = st.columns(7)
+    cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
+    for i, label in enumerate(g_short):
+        if cols_sh[i].button(label, key=f"sh_{label}"):
+            giorni_da_cambiare = [sett[i] for sett in cal_data if sett[i] != 0]
+            current_abs = st.session_state.assenze.get(m_sel, [])
+            if all(d in current_abs for d in giorni_da_cambiare):
+                st.session_state.assenze[m_sel] = [d for d in current_abs if d not in giorni_da_cambiare]
+            else:
+                for d in giorni_da_cambiare:
+                    if d not in current_abs: st.session_state.assenze[m_sel].append(d)
+            st.rerun()
+
+    for week in cal_data:
+        cols = st.columns(7)
+        for i, day in enumerate(week):
+            if day != 0:
+                is_abs = day in st.session_state.assenze.get(m_sel, [])
+                if cols[i].button(str(day), key=f"d_btn_{day}", type="primary" if is_abs else "secondary"):
+                    if is_abs: st.session_state.assenze[m_sel].remove(day)
+                    else: st.session_state.assenze[m_sel].append(day)
+                    st.rerun()
+
+    st.divider()
+    st.markdown("<div class='sidebar-header'>💾 BACKUP DATI</div>", unsafe_allow_html=True)
+    
+    # Scarica Backup
+    backup_data = {"medici": st.session_state.medici, "assenze": st.session_state.assenze}
+    st.download_button(
+        label="📥 Scarica Backup .json",
+        data=json.dumps(backup_data, indent=4),
+        file_name=f"backup_guardia_{datetime.now().strftime('%Y%m%d')}.json",
+        mime="application/json",
+        use_container_width=True
+    )
+    
+    # Carica Backup
+    uploaded_file = st.file_uploader("📤 Carica Backup .json", type="json")
+    if uploaded_file is not None:
+        try:
+            data = json.load(uploaded_file)
+            st.session_state.medici = data["medici"]
+            st.session_state.assenze = data["assenze"]
+            st.success("Dati caricati!")
+            st.rerun()
+        except:
+            st.error("File non valido.")
+
 # --- 5. INTERFACCIA PRINCIPALE ---
 st.markdown(f"<div class='main-title'>Gestione Turni: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
 
