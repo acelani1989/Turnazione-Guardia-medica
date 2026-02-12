@@ -179,8 +179,27 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
         res.append({"Data": f"{d} {g_short[wd]}", "Info": nome_f, "Tipo": tipo, "Mattina": m_m, "Pomeriggio": p_m, "Notte": n_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
     st.session_state.db_turni = pd.DataFrame(res)
 
-# --- 6. RIEPILOGO E DOWNLOAD PDF ---
+# --- 6. RIEPILOGO, ALERT E DOWNLOAD PDF ---
 if not st.session_state.db_turni.empty:
+    # A. Calcolo ore immediato per Alert
+    ore_m = {m: 0.0 for m in st.session_state.medici}
+    tot_mese = 0.0
+    for _, r in st.session_state.db_turni.iterrows():
+        d1, d2, d3 = calcola_durata(r["H_M"]), calcola_durata(r["H_P"]), calcola_durata(r["H_N"])
+        tot_mese += (d1 + d2 + d3)
+        if r["Mattina"] in ore_m: ore_m[r["Mattina"]] += d1
+        if r["Pomeriggio"] in ore_m: ore_m[r["Pomeriggio"]] += d2
+        if r["Notte"] in ore_m: ore_m[r["Notte"]] += d3
+
+    # B. Sezione Alert Visivi
+    st.markdown("---")
+    for med, ore in ore_m.items():
+        if ore > soglia_ore:
+            st.error(f"❌ **{med} ha superato la soglia!** Totale: **{int(ore)}h** / Limite: {soglia_ore}h")
+        elif ore > (soglia_ore - 15):
+            st.warning(f"⚠️ **{med} è vicino al limite.** Totale: **{int(ore)}h**")
+
+    # C. Editor Tabella
     st.session_state.db_turni = st.data_editor(st.session_state.db_turni, column_config={
         "Data": st.column_config.Column(disabled=True),
         "Info": st.column_config.Column("Festività", disabled=True),
@@ -191,31 +210,19 @@ if not st.session_state.db_turni.empty:
         "H_M": None, "H_P": None, "H_N": None
     }, use_container_width=True, hide_index=True)
 
-    # Calcolo Ore
-    ore_m = {m: 0.0 for m in st.session_state.medici}
-    tot_mese = 0.0
-    for _, r in st.session_state.db_turni.iterrows():
-        d1, d2, d3 = calcola_durata(r["H_M"]), calcola_durata(r["H_P"]), calcola_durata(r["H_N"])
-        tot_mese += (d1 + d2 + d3)
-        if r["Mattina"] in ore_m: ore_m[r["Mattina"]] += d1
-        if r["Pomeriggio"] in ore_m: ore_m[r["Pomeriggio"]] += d2
-        if r["Notte"] in ore_m: ore_m[r["Notte"]] += d3
-
     st.markdown(f"### 📊 Ore Totali {mese_nome}: **{int(tot_mese)} h**")
     st.table(pd.DataFrame([{"Medico": m, f"Ore {mese_nome}": f"{int(h)} h"} for m, h in ore_m.items()]))
 
+    # D. Funzione PDF Pagina Singola
     def genera_pdf_pagina_singola():
         buf = io.BytesIO()
-        # Margini minimi per massimizzare lo spazio verticale
         doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.3*cm, bottomMargin=0.3*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
         elements = []
         styles = getSampleStyleSheet()
         
-        # Titolo compatto
         elements.append(Paragraph(f"<b>TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}</b>", styles['Title']))
         elements.append(Spacer(1, 5))
         
-        # Tabella Turni (Font 6.8 per garantire lo spazio del riepilogo)
         data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
         t_styles = [
             ('GRID', (0,0), (-1,-1), 0.5, colors.black),
@@ -244,7 +251,6 @@ if not st.session_state.db_turni.empty:
         table.setStyle(TableStyle(t_styles))
         elements.append(table)
         
-        # Riepilogo Ore (Titolo richiesto)
         elements.append(Spacer(1, 8))
         elements.append(Paragraph(f"<b>RIEPILOGO ORE TOTALI DEL MESE {mese_nome.upper()}</b>", styles['Heading4']))
         
