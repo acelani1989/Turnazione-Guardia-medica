@@ -26,7 +26,7 @@ st.markdown("""
     .settings-section { background-color: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 10px; border-left: 5px solid #4299e1; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 15px; }
     .sidebar-header { color: #2b6cb0; font-weight: 700; border-bottom: 2px solid #bee3f8; padding-bottom: 5px; margin-bottom: 10px; }
     
-    /* FIX VISIBILITÀ INPUT */
+    /* VISIBILITÀ INPUT E SIDEBAR */
     div[data-baseweb="select"] *, div[data-baseweb="input"] * { color: #000000 !important; }
     [data-testid="stSidebar"] label p { color: #1a365d !important; font-weight: bold; }
     </style>
@@ -120,7 +120,7 @@ with st.sidebar:
     if up:
         data = json.load(up); st.session_state.medici, st.session_state.assenze = data["medici"], data["assenze"]; st.rerun()
 
-# --- 5. INTERFACCIA ---
+# --- 5. INTERFACCIA PRINCIPALE ---
 st.markdown(f"<div class='main-title'>Turni: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
 
 c1, c2, c3 = st.columns(3)
@@ -137,7 +137,7 @@ with c3:
     fes_p = st.text_input("Pomeriggio", "14:00 - 20:00", key="fp")
     fes_n = st.text_input("Notte", "20:00 - 08:00", key="fn")
 
-if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
+if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
     gg_m = calendar.monthrange(anno_sel, m_idx_v)[1]
     res = []
@@ -177,7 +177,7 @@ if not st.session_state.db_turni.empty:
             "Tipo": None, "H_M": None, "H_P": None, "H_N": None
         }, use_container_width=True, hide_index=True)
         
-        # --- RIEPILOGO ORE ---
+        # --- CALCOLO ORE ---
         ore_m = {m: 0.0 for m in st.session_state.medici}
         tot_mese = 0.0
         for _, r in st.session_state.db_turni.iterrows():
@@ -187,8 +187,9 @@ if not st.session_state.db_turni.empty:
             if r["Pomeriggio"] in ore_m: ore_m[r["Pomeriggio"]] += d2
             if r["Notte"] in ore_m: ore_m[r["Notte"]] += d3
         
-        st.markdown(f"### 📊 Ore Totali Mese: **{int(tot_mese)} h**")
-        st.table(pd.DataFrame([{"Medico": m, "Ore": f"{int(h)} h"} for m, h in ore_m.items()]))
+        # Riepilogo in app con nome mese
+        st.markdown(f"### 📊 Ore Totali {mese_nome}: **{int(tot_mese)} h**")
+        st.table(pd.DataFrame([{"Medico": m, f"Ore {mese_nome}": f"{int(h)} h"} for m, h in ore_m.items()]))
 
     with t2:
         st.dataframe(st.session_state.db_turni[["Data", "Mattina", "Pomeriggio", "Notte"]], use_container_width=True, hide_index=True)
@@ -200,7 +201,6 @@ if not st.session_state.db_turni.empty:
             styles = getSampleStyleSheet()
             elements.append(Paragraph(f"TURNI GUARDIA MEDICA - {mese_nome.upper()} {anno_sel}", styles['Title']))
             
-            # Tabella Turni
             data = [["GIORNO", "MATTINA", "POMERIGGIO", "NOTTE"]]
             t_styles = [('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('ALIGN', (0,0), (-1,-1), 'CENTER'), 
                         ('FONTSIZE', (0,0), (-1,-1), 8), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue)]
@@ -214,11 +214,10 @@ if not st.session_state.db_turni.empty:
             t.setStyle(TableStyle(t_styles))
             elements.append(t)
             
-            # Riepilogo Ore in fondo alla stessa pagina
             elements.append(Spacer(1, 15))
-            elements.append(Paragraph("RIEPILOGO ORE", styles['Heading3']))
+            elements.append(Paragraph(f"RIEPILOGO ORE {mese_nome.upper()}", styles['Heading3']))
             data_ore = [[m, f"{int(h)} h"] for m, h in ore_m.items()]
-            data_ore.append(["TOTALE MESE", f"{int(tot_mese)} h"])
+            data_ore.append([f"ORE TOTALI {mese_nome.upper()}", f"{int(tot_mese)} h"])
             t_ore = Table(data_ore, colWidths=[10*cm, 4*cm])
             t_ore.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold')]))
             elements.append(t_ore)
@@ -226,4 +225,4 @@ if not st.session_state.db_turni.empty:
             doc.build(elements)
             return buf.getvalue()
             
-        st.download_button("📥 SCARICA PDF (PAGINA SINGOLA)", genera_pdf(), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True, type="primary")
+        st.download_button(f"📥 SCARICA PDF {mese_nome.upper()}", genera_pdf(), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True, type="primary")
