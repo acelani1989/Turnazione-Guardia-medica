@@ -76,6 +76,7 @@ with st.sidebar:
     
     st.write("**Scorciatoie:**")
     cols_f = st.columns(5)
+    # Scorciatoie giorni feriali (aggiunge solo Notte come richiesto prima)
     for i, l in enumerate(["Lun", "Mar", "Mer", "Gio", "Ven"]):
         if cols_f[i].button(l):
             for s in cal_data:
@@ -85,13 +86,18 @@ with st.sidebar:
             st.rerun()
 
     c_we = st.columns(2)
+    # CORREZIONE: Sabato e Domenica ora aggiungono indisponibilità totale (M, P, N)
     if c_we[0].button("Tutti i Sabati"):
         for s in cal_data:
-            if s[5] != 0: st.session_state.assenze[m_sel][str(s[5])] = ["M", "P", "N"]
+            if s[5] != 0: 
+                d_str = str(s[5])
+                st.session_state.assenze[m_sel][d_str] = ["M", "P", "N"]
         st.rerun()
     if c_we[1].button("Tutte le Domeniche"):
         for s in cal_data:
-            if s[6] != 0: st.session_state.assenze[m_sel][str(s[6])] = ["M", "P", "N"]
+            if s[6] != 0: 
+                d_str = str(s[6])
+                st.session_state.assenze[m_sel][d_str] = ["M", "P", "N"]
         st.rerun()
 
     st.write("**Calendario Manuale:**")
@@ -199,11 +205,9 @@ if not st.session_state.db_turni.empty:
         data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
         ts = [('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 8), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]
         
-        # Trasformiamo il dataframe in una lista di dizionari per iterare in sicurezza
         rows = df.to_dict('records')
         for i, r in enumerate(rows):
             data.append([r['Data'], r['Tipo'], f"{r['Mattina']}\n{r['H_M']}", f"{r['Pomeriggio']}\n{r['H_P']}", f"{r['Notte']}\n{r['H_N']}"])
-            # Controllo sicuro sulla chiave 'Label'
             label = r.get("Label", "")
             if label == "Festivo": 
                 ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 0.8, 0.8)))
