@@ -74,9 +74,8 @@ with st.sidebar:
     m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
     
-    st.write("**Scorciatoie:**")
+    st.write("**Scorciatoie Feriali (Notte):**")
     cols_f = st.columns(5)
-    # Scorciatoie giorni feriali (aggiunge solo Notte come richiesto prima)
     for i, l in enumerate(["Lun", "Mar", "Mer", "Gio", "Ven"]):
         if cols_f[i].button(l):
             for s in cal_data:
@@ -85,22 +84,50 @@ with st.sidebar:
                     st.session_state.assenze[m_sel][d_str] = list(set(st.session_state.assenze[m_sel].get(d_str, []) + ["N"]))
             st.rerun()
 
-    c_we = st.columns(2)
-    # CORREZIONE: Sabato e Domenica ora aggiungono indisponibilità totale (M, P, N)
-    if c_we[0].button("Tutti i Sabati"):
+    # NUOVA SEZIONE: Scorciatoie Weekend divise per fascia
+    st.write("**Scorciatoie Sabati:**")
+    c_sab = st.columns(3)
+    if c_sab[0].button("Sab M"):
         for s in cal_data:
             if s[5] != 0: 
-                d_str = str(s[5])
-                st.session_state.assenze[m_sel][d_str] = ["M", "P", "N"]
+                d = str(s[5])
+                st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + ["M"]))
         st.rerun()
-    if c_we[1].button("Tutte le Domeniche"):
+    if c_sab[1].button("Sab P"):
         for s in cal_data:
-            if s[6] != 0: 
-                d_str = str(s[6])
-                st.session_state.assenze[m_sel][d_str] = ["M", "P", "N"]
+            if s[5] != 0: 
+                d = str(s[5])
+                st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + ["P"]))
+        st.rerun()
+    if c_sab[2].button("Sab N"):
+        for s in cal_data:
+            if s[5] != 0: 
+                d = str(s[5])
+                st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + ["N"]))
         st.rerun()
 
-    st.write("**Calendario Manuale:**")
+    st.write("**Scorciatoie Domeniche:**")
+    c_dom = st.columns(3)
+    if c_dom[0].button("Dom M"):
+        for s in cal_data:
+            if s[6] != 0: 
+                d = str(s[6])
+                st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + ["M"]))
+        st.rerun()
+    if c_dom[1].button("Dom P"):
+        for s in cal_data:
+            if s[6] != 0: 
+                d = str(s[6])
+                st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + ["P"]))
+        st.rerun()
+    if c_dom[2].button("Dom N"):
+        for s in cal_data:
+            if s[6] != 0: 
+                d = str(s[6])
+                st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + ["N"]))
+        st.rerun()
+
+    st.write("**Calendario Manuale (Tutto il giorno):**")
     for week in cal_data:
         cols = st.columns(7)
         for i, day in enumerate(week):
@@ -171,7 +198,6 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
 if not st.session_state.db_turni.empty:
     stats_data = []
     df = st.session_state.db_turni
-    
     somma_ore_medici = 0
     ore_teoriche_mese = df['OreM'].sum() + df['OreP'].sum() + df['OreN'].sum()
 
@@ -201,7 +227,6 @@ if not st.session_state.db_turni.empty:
         buf = io.BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.8*cm, bottomMargin=0.8*cm, leftMargin=0.8*cm, rightMargin=0.8*cm)
         elements = [Paragraph(f"<b>GUARDIA MEDICA PORTO EMPEDOCLE - {mese_nome.upper()}</b>", getSampleStyleSheet()['Title'])]
-        
         data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
         ts = [('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 8), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]
         
@@ -209,10 +234,8 @@ if not st.session_state.db_turni.empty:
         for i, r in enumerate(rows):
             data.append([r['Data'], r['Tipo'], f"{r['Mattina']}\n{r['H_M']}", f"{r['Pomeriggio']}\n{r['H_P']}", f"{r['Notte']}\n{r['H_N']}"])
             label = r.get("Label", "")
-            if label == "Festivo": 
-                ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 0.8, 0.8)))
-            elif label == "Prefestivo": 
-                ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 1, 0.85)))
+            if label == "Festivo": ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 0.8, 0.8)))
+            elif label == "Prefestivo": ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 1, 0.85)))
         
         t1 = Table(data, colWidths=[2.2*cm, 2*cm, 4.8*cm, 4.8*cm, 4.8*cm])
         t1.setStyle(TableStyle(ts))
