@@ -162,73 +162,95 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
         })
     st.session_state.db_turni = pd.DataFrame(res)
 
-# --- 6. VISUALIZZAZIONE ---
+# --- 6. VISUALIZZAZIONE E EDITING ---
 if not st.session_state.db_turni.empty:
-    stats_data = []
-    df = st.session_state.db_turni
-    somma_ore_medici = 0
-    ore_teoriche_mese = df['OreM'].sum() + df['OreP'].sum() + df['OreN'].sum()
-
-    for m in st.session_state.medici:
-        totale = df[df['Mattina'] == m]['OreM'].sum() + df[df['Pomeriggio'] == m]['OreP'].sum() + df[df['Notte'] == m]['OreN'].sum()
-        stats_data.append({"Medico": m, "Ore Totali": totale})
-        somma_ore_medici += totale
-        if totale > ore_max: st.markdown(f"<div class='alert-box'>⚠️ <b>{m}</b>: {totale} ore</div>", unsafe_allow_html=True)
-
+    # Qui abilitiamo la selezione manuale dei medici tramite data_editor
     c1, c2 = st.columns([2, 1])
+    
     with c1:
-        st.subheader("📅 Turni")
-        st.data_editor(df[["Data", "Tipo", "Mattina", "Pomeriggio", "Notte"]], use_container_width=True, hide_index=True)
+        st.subheader("📅 Turni (Modificabili)")
+        # Configuriamo le colonne come menu a tendina
+        lista_medici_tendina = st.session_state.medici + ["---"]
+        edited_df = st.data_editor(
+            st.session_state.db_turni,
+            column_order=("Data", "Tipo", "Mattina", "Pomeriggio", "Notte"),
+            column_config={
+                "Mattina": st.column_config.SelectboxColumn("Mattina", options=lista_medici_tendina),
+                "Pomeriggio": st.column_config.SelectboxColumn("Pomeriggio", options=lista_medici_tendina),
+                "Notte": st.column_config.SelectboxColumn("Notte", options=lista_medici_tendina),
+                "Data": st.column_config.TextColumn("Data", disabled=True),
+                "Tipo": st.column_config.TextColumn("Tipo", disabled=True),
+            },
+            use_container_width=True,
+            hide_index=True,
+            key="editor_turni"
+        )
+        # Aggiorniamo il db in session state con le modifiche manuali
+        st.session_state.db_turni = edited_df
+
     with c2:
-        st.subheader("📊 Riepilogo")
+        st.subheader("📊 Riepilogo Ore")
+        df = st.session_state.db_turni
+        stats_data = []
+        somma_ore_medici = 0
+        ore_teoriche_mese = df['OreM'].sum() + df['OreP'].sum() + df['OreN'].sum()
+
+        for m in st.session_state.medici:
+            t_m = df[df['Mattina'] == m]['OreM'].sum()
+            t_p = df[df['Pomeriggio'] == m]['OreP'].sum()
+            t_n = df[df['Notte'] == m]['OreN'].sum()
+            totale = t_m + t_p + t_n
+            stats_data.append({"Medico": m, "Ore Totali": totale})
+            somma_ore_medici += totale
+            if totale > ore_max: 
+                st.markdown(f"<div class='alert-box'>⚠️ <b>{m}</b>: {totale} ore</div>", unsafe_allow_html=True)
+
         st.table(pd.DataFrame(stats_data))
         st.markdown(f"<div class='total-box'>SOMMA ORE MEDICI: {somma_ore_medici}<br>SOMMA ORE MESE: {ore_teoriche_mese}</div>", unsafe_allow_html=True)
 
+    # --- 7. PDF GENERATION ---
     def genera_pdf(stats_list, s_medici, s_mese):
         buf = io.BytesIO()
-        # Ridotti i margini per far stare tutto in una pagina
-        doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.5*cm, bottomMargin=0.5*cm, leftMargin=0.5*cm, rightMargin=0.5*cm)
+        doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.4*cm, bottomMargin=0.4*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
         elements = []
-        
         styles = getSampleStyleSheet()
-        title_style = styles['Title']
-        title_style.fontSize = 14 # Titolo più piccolo
-        elements.append(Paragraph(f"<b>GUARDIA MEDICA PORTO EMPEDOCLE - {mese_nome.upper()} {anno_sel}</b>", title_style))
-        elements.append(Spacer(1, 5))
+        elements.append(Paragraph(f"<b>GUARDIA MEDICA PORTO EMPEDOCLE - {mese_nome.upper()} {anno_sel}</b>", styles['Title']))
+        elements.append(Spacer(1, 4))
         
-        data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
-        ts = [
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('FONTSIZE', (0,0), (-1,-1), 7), # Font molto piccolo per compattezza
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 1), # Ridotto padding
-            ('TOPPADDING', (0,0), (-1,-1), 1),
+        data_t = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
+        ts_t = [
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+            ('TOPPADDING', (0,0), (-1,-1), 1), ('BOTTOMPADDING', (0,0), (-1,-1), 1),
         ]
         
-        rows = df.to_dict('records')
+        rows = st.session_state.db_turni.to_dict('records')
         for i, r in enumerate(rows):
-            # Formattazione riga singola per occupare meno spazio verticale
-            m_txt = f"{r['Mattina']} ({r['H_M']})" if r['Mattina'] != "---" else "---"
-            p_txt = f"{r['Pomeriggio']} ({r['H_P']})" if r['Pomeriggio'] != "---" else "---"
-            n_txt = f"{r['Notte']} (20-08)"
-            data.append([r['Data'], r['Tipo'][:12], m_txt, p_txt, n_txt])
-            
+            m_txt = f"{r['Mattina']} ({r['H_M']})" if r['Mattina'] not in ["---", None] else "---"
+            p_txt = f"{r['Pomeriggio']} ({r['H_P']})" if r['Pomeriggio'] not in ["---", None] else "---"
+            data_t.append([r['Data'], str(r['Tipo'])[:10], m_txt, p_txt, f"{r['Notte']} (20-08)"])
             label = r.get("Label", "")
-            if label == "Festivo": ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 0.85, 0.85)))
-            elif label == "Prefestivo": ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 1, 0.9)))
+            if label == "Festivo": ts_t.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 0.88, 0.88)))
+            elif label == "Prefestivo": ts_t.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 1, 0.9)))
+            
+        table_turni = Table(data_t, colWidths=[2.1*cm, 2.3*cm, 5.2*cm, 5.2*cm, 5.2*cm])
+        table_turni.setStyle(TableStyle(ts_t))
+        elements.append(table_turni)
+        elements.append(Spacer(1, 6))
         
-        t1 = Table(data, colWidths=[2.2*cm, 2.5*cm, 5.1*cm, 5.1*cm, 5.1*cm], repeatRows=1)
-        t1.setStyle(TableStyle(ts))
-        elements.append(t1)
-        elements.append(Spacer(1, 5))
+        elements.append(Paragraph("<b>RIEPILOGO ORE</b>", styles['Normal']))
+        data_r = [["MEDICO", "ORE TOTALI"]]
+        for s in stats_list: data_r.append([s['Medico'], str(s['Ore Totali'])])
+        data_r.append([f"TOTALE MEDICI: {s_medici}", f"TOTALE MESE: {s_mese}"])
         
-        # Riepilogo compatto in fondo
-        info_txt = f"<b>RIEPILOGO:</b> Somma Medici: {s_medici} ore | Somma Mese: {s_mese} ore"
-        elements.append(Paragraph(info_txt, styles['Normal']))
-        
+        table_riepilogo = Table(data_r, colWidths=[10*cm, 10*cm])
+        table_riepilogo.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('FONTSIZE', (0,0), (-1,-1), 8),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.whitesmoke), ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold')
+        ]))
+        elements.append(table_riepilogo)
         doc.build(elements)
         return buf.getvalue()
 
