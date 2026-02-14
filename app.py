@@ -20,7 +20,6 @@ st.markdown("""
     .main-title { color: #2c5282; font-weight: 800; font-size: 2.2rem; text-align: center; margin-bottom: 20px; }
     .sidebar-header { color: #2b6cb0; font-weight: 700; border-bottom: 2px solid #bee3f8; padding-bottom: 5px; margin-bottom: 15px; }
     .alert-box { padding: 10px; background-color: #fff3cd; border-left: 5px solid #ffca28; color: #856404; border-radius: 5px; margin-bottom: 10px; }
-    .abs-table { font-size: 0.8rem; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -67,44 +66,41 @@ with st.sidebar:
     ore_max = st.slider("Limite ore mensili (Alert):", 120, 250, 180)
 
     st.divider()
-    st.markdown("<div class='sidebar-header'>📅 SCORCIATOIE INDISPONIBILITÀ</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sidebar-header'>📅 INDISPONIBILITÀ</div>", unsafe_allow_html=True)
     m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
     
-    st.write("**Giorni Feriali (Notte):**")
+    st.write("**Scorciatoie:**")
     cols_f = st.columns(5)
-    for i, l in enumerate(["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"]):
+    for i, l in enumerate(["Lun", "Mar", "Mer", "Gio", "Ven"]):
         if cols_f[i].button(l):
             for s in cal_data:
-                d = s[i]
-                if d != 0: 
-                    d_str = str(d)
-                    current = st.session_state.assenze[m_sel].get(d_str, [])
-                    st.session_state.assenze[m_sel][d_str] = list(set(current + ["N"]))
+                if s[i] != 0: 
+                    d_str = str(s[i])
+                    st.session_state.assenze[m_sel][d_str] = list(set(st.session_state.assenze[m_sel].get(d_str, []) + ["N"]))
             st.rerun()
 
-    st.write("**Weekend:**")
-    c_s = st.columns(3)
-    labels = ["Mattina", "Pomeriggio", "Notte"]
-    codes = ["M", "P", "N"]
-    for i in range(3):
-        if c_s[i].button(f"Sab {labels[i]}"):
-            for s in cal_data:
-                if s[5] != 0:
-                    d_str = str(s[5])
-                    curr = st.session_state.assenze[m_sel].get(d_str, [])
-                    st.session_state.assenze[m_sel][d_str] = list(set(curr + [codes[i]]))
-            st.rerun()
+    c_we = st.columns(2)
+    if c_we[0].button("Tutti i Sabati"):
+        for s in cal_data:
+            if s[5] != 0: st.session_state.assenze[m_sel][str(s[5])] = ["M", "P", "N"]
+        st.rerun()
+    if c_we[1].button("Tutte le Domeniche"):
+        for s in cal_data:
+            if s[6] != 0: st.session_state.assenze[m_sel][str(s[6])] = ["M", "P", "N"]
+        st.rerun()
 
-    c_d = st.columns(3)
-    for i in range(3):
-        if c_d[i].button(f"Dom {labels[i]}"):
-            for s in cal_data:
-                if s[6] != 0:
-                    d_str = str(s[6])
-                    curr = st.session_state.assenze[m_sel].get(d_str, [])
-                    st.session_state.assenze[m_sel][d_str] = list(set(curr + [codes[i]]))
-            st.rerun()
+    st.write("**Calendario Manuale:**")
+    for week in cal_data:
+        cols = st.columns(7)
+        for i, day in enumerate(week):
+            if day != 0:
+                d_str = str(day)
+                curr_abs = st.session_state.assenze[m_sel].get(d_str, [])
+                label = f"{day}\n{''.join(curr_abs)}" if curr_abs else f"{day}"
+                if cols[i].button(label, key=f"btn_{day}", type="primary" if curr_abs else "secondary"):
+                    st.session_state.assenze[m_sel][d_str] = ["M", "P", "N"] if not curr_abs else []
+                    st.rerun()
 
     st.divider()
     if st.button("🗑️ SVUOTA ASSENZE MEDICO", use_container_width=True):
@@ -131,11 +127,9 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
         o_m, o_p, o_n = 0, 0, 12
         
         if tipo == "Festivo":
-            h_m, h_p = "08:00 - 14:00", "14:00 - 20:00"
-            o_m, o_p = 6, 6
+            h_m, h_p = "08:00 - 14:00", "14:00 - 20:00"; o_m, o_p = 6, 6
         elif tipo == "Prefestivo":
-            h_m, h_p = "10:00 - 14:00", "14:00 - 20:00"
-            o_m, o_p = 4, 6
+            h_m, h_p = "10:00 - 14:00", "14:00 - 20:00"; o_m, o_p = 4, 6
 
         disp_m = [m for m in st.session_state.medici if "M" not in st.session_state.assenze[m].get(d_str, [])]
         disp_p = [m for m in st.session_state.medici if "P" not in st.session_state.assenze[m].get(d_str, [])]
@@ -143,7 +137,6 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
 
         n_m = random.choice([m for m in disp_n if m != u_n] or disp_n)
         u_n = n_m
-        
         m_m = random.choice([m for m in disp_m if m != n_m] or disp_m) if o_m > 0 else "---"
         p_m = random.choice([m for m in disp_p if m not in [n_m, m_m]] or disp_p) if o_p > 0 else "---"
 
@@ -155,72 +148,41 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
         })
     st.session_state.db_turni = pd.DataFrame(res)
 
-# --- 6. VISUALIZZAZIONE E STATISTICHE ---
+# --- 6. VISUALIZZAZIONE ---
 if not st.session_state.db_turni.empty:
     stats_data = []
     df = st.session_state.db_turni
     for m in st.session_state.medici:
-        ore_m = df[df['Mattina'] == m]['OreM'].sum()
-        ore_p = df[df['Pomeriggio'] == m]['OreP'].sum()
-        ore_n = df[df['Notte'] == m]['OreN'].sum()
-        totale = ore_m + ore_p + ore_n
+        totale = df[df['Mattina'] == m]['OreM'].sum() + df[df['Pomeriggio'] == m]['OreP'].sum() + df[df['Notte'] == m]['OreN'].sum()
         stats_data.append({"Medico": m, "Ore Totali": totale})
-        
-        if totale > ore_max:
-            st.markdown(f"<div class='alert-box'>⚠️ <b>{m}</b>: {totale} ore (Limite: {ore_max})</div>", unsafe_allow_html=True)
+        if totale > ore_max: st.markdown(f"<div class='alert-box'>⚠️ <b>{m}</b>: {totale} ore</div>", unsafe_allow_html=True)
 
-    col_t, col_s = st.columns([2, 1])
-    
-    with col_t:
-        st.subheader("📅 Tabella Turni Mensile")
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        st.subheader("📅 Turni")
         st.data_editor(df[["Data", "Tipo", "Mattina", "Pomeriggio", "Notte"]], use_container_width=True, hide_index=True)
-    
-    with col_s:
-        st.subheader("📊 Riepilogo Ore")
+    with c2:
+        st.subheader("📊 Ore")
         st.table(pd.DataFrame(stats_data))
 
-    st.divider()
-    
-    # --- NUOVO: CALENDARIO ASSENZE RIASSUNTIVO ---
-    st.subheader("🕵️ Riepilogo Assenze Inserite")
-    abs_list = []
-    for d in range(1, 32):
-        d_str = str(d)
-        row = {"Giorno": d}
-        for m in st.session_state.medici:
-            a = st.session_state.assenze[m].get(d_str, [])
-            row[m] = ", ".join(a) if a else "-"
-        abs_list.append(row)
-    st.dataframe(pd.DataFrame(abs_list).set_index("Giorno"), use_container_width=True)
-
-    # --- 7. PDF ---
     def genera_pdf(stats_list):
         buf = io.BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.8*cm, bottomMargin=0.8*cm, leftMargin=0.8*cm, rightMargin=0.8*cm)
-        elements = []
-        styles = getSampleStyleSheet()
-        elements.append(Paragraph(f"<b>GUARDIA MEDICA PORTO EMPEDOCLE - {mese_nome.upper()} {anno_sel}</b>", styles['Title']))
-        
+        elements = [Paragraph(f"<b>GUARDIA MEDICA PORTO EMPEDOCLE - {mese_nome.upper()}</b>", getSampleStyleSheet()['Title'])]
         data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
-        table_style = [('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 8), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]
-        
+        ts = [('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 8), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]
         for i, r in enumerate(df.to_dict('records')):
-            data.append([r['Data'], r["Tipo"], f"{r['Mattina']}\n{r['H_M']}", f"{r['Pomeriggio']}\n{r['H_P']}", f"{r['Notte']}\n{r['H_N']}"])
-            if r["Tipo"] == "Festivo": table_style.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 0.8, 0.8)))
-            elif r["Tipo"] == "Prefestivo": table_style.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 1, 0.85)))
-        
+            data.append([r['Data'], r['Tipo'], f"{r['Mattina']}\n{r['H_M']}", f"{r['Pomeriggio']}\n{r['H_P']}", f"{r['Notte']}\n{r['H_N']}"])
+            if r["Tipo"] == "Festivo": ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 0.8, 0.8)))
+            elif r["Tipo"] == "Prefestivo": ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 1, 0.85)))
         t1 = Table(data, colWidths=[2.2*cm, 2*cm, 4.8*cm, 4.8*cm, 4.8*cm])
-        t1.setStyle(TableStyle(table_style))
-        elements.append(t1)
-        elements.append(Spacer(1, 15))
-        elements.append(Paragraph("<b>RIEPILOGO ORE TOTALI</b>", styles['Heading3']))
-        
+        t1.setStyle(TableStyle(ts))
+        elements.append(t1); elements.append(Spacer(1, 15))
         data_s = [["MEDICO", "ORE TOTALI"]]
         for s in stats_list: data_s.append([s['Medico'], str(s['Ore Totali'])])
         t2 = Table(data_s, colWidths=[5*cm, 4*cm])
         t2.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.lightgrey)]))
         elements.append(t2)
-        doc.build(elements)
-        return buf.getvalue()
+        doc.build(elements); return buf.getvalue()
 
-    st.download_button("📥 SCARICA PDF COLORATO", genera_pdf(stats_data), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True)
+    st.download_button("📥 SCARICA PDF", genera_pdf(stats_data), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True)
