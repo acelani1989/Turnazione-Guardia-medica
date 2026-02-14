@@ -20,6 +20,7 @@ st.markdown("""
     .main-title { color: #2c5282; font-weight: 800; font-size: 2.2rem; text-align: center; margin-bottom: 20px; }
     .sidebar-header { color: #2b6cb0; font-weight: 700; border-bottom: 2px solid #bee3f8; padding-bottom: 5px; margin-bottom: 15px; }
     .alert-box { padding: 10px; background-color: #fff3cd; border-left: 5px solid #ffca28; color: #856404; border-radius: 5px; margin-bottom: 10px; }
+    .abs-table { font-size: 0.8rem; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -77,8 +78,9 @@ with st.sidebar:
             for s in cal_data:
                 d = s[i]
                 if d != 0: 
-                    current = st.session_state.assenze[m_sel].get(str(d), [])
-                    st.session_state.assenze[m_sel][str(d)] = list(set(current + ["N"]))
+                    d_str = str(d)
+                    current = st.session_state.assenze[m_sel].get(d_str, [])
+                    st.session_state.assenze[m_sel][d_str] = list(set(current + ["N"]))
             st.rerun()
 
     st.write("**Weekend:**")
@@ -108,7 +110,6 @@ with st.sidebar:
     if st.button("🗑️ SVUOTA ASSENZE MEDICO", use_container_width=True):
         st.session_state.assenze[m_sel] = {}; st.rerun()
     
-    # Backup corretto
     backup_obj = {"assenze": st.session_state.assenze, "limite": ore_max}
     st.download_button("💾 SCARICA BACKUP", json.dumps(backup_obj), f"backup_{mese_nome}.json", use_container_width=True)
 
@@ -126,7 +127,6 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
         tipo = "Festivo" if is_festivo(dt, fest) else ("Prefestivo" if is_prefestivo(dt, fest) else "Feriale")
         d_str = str(d)
         
-        # Inizializzazione dati turno
         h_m, h_p, h_n = "---", "---", "20:00 - 08:00"
         o_m, o_p, o_n = 0, 0, 12
         
@@ -137,16 +137,13 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
             h_m, h_p = "10:00 - 14:00", "14:00 - 20:00"
             o_m, o_p = 4, 6
 
-        # Filtro disponibilità
         disp_m = [m for m in st.session_state.medici if "M" not in st.session_state.assenze[m].get(d_str, [])]
         disp_p = [m for m in st.session_state.medici if "P" not in st.session_state.assenze[m].get(d_str, [])]
         disp_n = [m for m in st.session_state.medici if "N" not in st.session_state.assenze[m].get(d_str, [])]
 
-        # Assegnazione Notte
         n_m = random.choice([m for m in disp_n if m != u_n] or disp_n)
         u_n = n_m
         
-        # Assegnazione Mattina/Pomeriggio
         m_m = random.choice([m for m in disp_m if m != n_m] or disp_m) if o_m > 0 else "---"
         p_m = random.choice([m for m in disp_p if m not in [n_m, m_m]] or disp_p) if o_p > 0 else "---"
 
@@ -160,7 +157,6 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
 
 # --- 6. VISUALIZZAZIONE E STATISTICHE ---
 if not st.session_state.db_turni.empty:
-    # Calcolo statistiche sicuro
     stats_data = []
     df = st.session_state.db_turni
     for m in st.session_state.medici:
@@ -173,11 +169,29 @@ if not st.session_state.db_turni.empty:
         if totale > ore_max:
             st.markdown(f"<div class='alert-box'>⚠️ <b>{m}</b>: {totale} ore (Limite: {ore_max})</div>", unsafe_allow_html=True)
 
-    st.subheader("Tabella Turni")
-    st.data_editor(df[["Data", "Tipo", "Mattina", "Pomeriggio", "Notte"]], use_container_width=True, hide_index=True)
+    col_t, col_s = st.columns([2, 1])
     
-    st.subheader("📊 Riepilogo Ore")
-    st.table(pd.DataFrame(stats_data))
+    with col_t:
+        st.subheader("📅 Tabella Turni Mensile")
+        st.data_editor(df[["Data", "Tipo", "Mattina", "Pomeriggio", "Notte"]], use_container_width=True, hide_index=True)
+    
+    with col_s:
+        st.subheader("📊 Riepilogo Ore")
+        st.table(pd.DataFrame(stats_data))
+
+    st.divider()
+    
+    # --- NUOVO: CALENDARIO ASSENZE RIASSUNTIVO ---
+    st.subheader("🕵️ Riepilogo Assenze Inserite")
+    abs_list = []
+    for d in range(1, 32):
+        d_str = str(d)
+        row = {"Giorno": d}
+        for m in st.session_state.medici:
+            a = st.session_state.assenze[m].get(d_str, [])
+            row[m] = ", ".join(a) if a else "-"
+        abs_list.append(row)
+    st.dataframe(pd.DataFrame(abs_list).set_index("Giorno"), use_container_width=True)
 
     # --- 7. PDF ---
     def genera_pdf(stats_list):
@@ -185,18 +199,10 @@ if not st.session_state.db_turni.empty:
         doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.8*cm, bottomMargin=0.8*cm, leftMargin=0.8*cm, rightMargin=0.8*cm)
         elements = []
         styles = getSampleStyleSheet()
-        
         elements.append(Paragraph(f"<b>GUARDIA MEDICA PORTO EMPEDOCLE - {mese_nome.upper()} {anno_sel}</b>", styles['Title']))
         
-        # Tabella Turni
         data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
-        table_style = [
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('FONTSIZE', (0,0), (-1,-1), 8),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)
-        ]
+        table_style = [('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 8), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]
         
         for i, r in enumerate(df.to_dict('records')):
             data.append([r['Data'], r["Tipo"], f"{r['Mattina']}\n{r['H_M']}", f"{r['Pomeriggio']}\n{r['H_P']}", f"{r['Notte']}\n{r['H_N']}"])
@@ -206,17 +212,14 @@ if not st.session_state.db_turni.empty:
         t1 = Table(data, colWidths=[2.2*cm, 2*cm, 4.8*cm, 4.8*cm, 4.8*cm])
         t1.setStyle(TableStyle(table_style))
         elements.append(t1)
-        
         elements.append(Spacer(1, 15))
         elements.append(Paragraph("<b>RIEPILOGO ORE TOTALI</b>", styles['Heading3']))
         
-        # Tabella Ore
         data_s = [["MEDICO", "ORE TOTALI"]]
         for s in stats_list: data_s.append([s['Medico'], str(s['Ore Totali'])])
         t2 = Table(data_s, colWidths=[5*cm, 4*cm])
         t2.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.lightgrey)]))
         elements.append(t2)
-        
         doc.build(elements)
         return buf.getvalue()
 
