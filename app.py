@@ -68,15 +68,15 @@ with st.sidebar:
     m_idx_v = mesi_ita.index(mese_nome) + 1
     
     st.divider()
-    st.markdown("<div class='sidebar-header'>📅 SCORCIATOIE</div>", unsafe_allow_html=True)
-    m_sel = st.selectbox("Medico:", st.session_state.medici)
+    st.markdown("<div class='sidebar-header'>📅 SCORCIATOIE INDISPONIBILITÀ</div>", unsafe_allow_html=True)
+    m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
     
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
     
     # Feriali
-    st.write("**Feriali (Notte):**")
+    st.write("**Giorni Feriali (Solo Notte):**")
     cols_fer = st.columns(5)
-    g_feriali = ["LUN", "MAR", "MER", "GIO", "VEN"]
+    g_feriali = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"]
     for i, label in enumerate(g_feriali):
         if cols_fer[i].button(label):
             for sett in cal_data:
@@ -86,39 +86,41 @@ with st.sidebar:
                     st.session_state.assenze[m_sel][d] = list(set(curr + ["N"])) if "N" not in curr else [f for f in curr if f != "N"]
             st.rerun()
 
-    # Weekend
-    st.write("**Sabato (Fasce):**")
+    # Sabato
+    st.write("**Sabato (Tutte le fasce):**")
     c_s1, c_s2, c_s3 = st.columns(3)
-    if c_s1.button("SAB M"):
+    if c_s1.button("Sabato Mattina"):
         for sett in cal_data:
             d = sett[5]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["M"]))}))
         st.rerun()
-    if c_s2.button("SAB P"):
+    if c_s2.button("Sabato Pomeriggio"):
         for sett in cal_data:
             d = sett[5]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["P"]))}))
         st.rerun()
-    if c_s3.button("SAB N"):
+    if c_s3.button("Sabato Notte"):
         for sett in cal_data:
             d = sett[5]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["N"]))}))
         st.rerun()
 
-    st.write("**Domenica (Fasce):**")
+    # Domenica
+    st.write("**Domenica (Tutte le fasce):**")
     c_d1, c_d2, c_d3 = st.columns(3)
-    if c_d1.button("DOM M"):
+    if c_d1.button("Domenica Mattina"):
         for sett in cal_data:
             d = sett[6]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["M"]))}))
         st.rerun()
-    if c_d2.button("DOM P"):
+    if c_d2.button("Domenica Pomeriggio"):
         for sett in cal_data:
             d = sett[6]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["P"]))}))
         st.rerun()
-    if c_d3.button("DOM N"):
+    if c_d3.button("Domenica Notte"):
         for sett in cal_data:
             d = sett[6]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["N"]))}))
         st.rerun()
 
     st.divider()
-    # Calendario Manuale
+    # Calendario Puntuale
+    st.write("**Calendario Manuale:**")
     for week in cal_data:
         cols = st.columns(7)
         for i, day in enumerate(week):
@@ -130,18 +132,18 @@ with st.sidebar:
                     st.rerun()
 
     st.divider()
-    # --- NUOVI PULSANTI GESTIONE ---
-    if st.button("🗑️ SVUOTA ASSENZE MEDICO", type="secondary", use_container_width=True):
+    # Gestione Dati
+    if st.button("🗑️ SVUOTA TUTTE LE ASSENZE DEL MEDICO", type="secondary", use_container_width=True):
         st.session_state.assenze[m_sel] = {}
         st.rerun()
 
     backup_data = json.dumps({"medici": st.session_state.medici, "assenze": st.session_state.assenze}, indent=4)
-    st.download_button("💾 SCARICA BACKUP DATI", backup_data, f"backup_turni_{mese_nome}.json", "application/json", use_container_width=True)
+    st.download_button("💾 SCARICA BACKUP DATI (JSON)", backup_data, f"backup_porto_empedocle_{mese_nome}.json", "application/json", use_container_width=True)
 
 # --- 5. INTERFACCIA PRINCIPALE ---
 st.markdown(f"<div class='main-title'>C.A. Porto Empedocle - {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
 
-if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
+if st.button("🚀 GENERA TURNAZIONE", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
     gg_m = calendar.monthrange(anno_sel, m_idx_v)[1]
     res = []
@@ -186,4 +188,4 @@ if not st.session_state.db_turni.empty:
         table.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]))
         elements.append(table); doc.build(elements); return buf.getvalue()
 
-    st.download_button("📥 Scarica PDF", genera_pdf(), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True)
+    st.download_button("📥 SCARICA TURNI IN PDF", genera_pdf(), f"Turni_CA_Porto_Empedocle_{mese_nome}.pdf", "application/pdf", use_container_width=True)
