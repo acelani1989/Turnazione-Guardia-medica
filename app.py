@@ -48,24 +48,20 @@ def get_festivita(anno):
     dt_p = datetime(anno, m_p, g_p)
     dt_pp = dt_p + timedelta(days=1)
     
-    # Dizionario (mese, giorno)
-    feste = {
-        (1, 1): "Capodanno", (1, 6): "Epifania", (4, 25): "Liberazione", (5, 1): "Festa Lavoro", 
-        (6, 2): "Festa Repubblica", (8, 15): "Ferragosto", (11, 1): "Ognissanti", 
-        (12, 8): "Immacolata", (12, 25): "Natale", (12, 26): "S. Stefano",
-        (m_p, g_p): "Pasqua", (dt_pp.month, dt_pp.day): "Pasquetta", (2, 25): "S. Patrono"
+    return {
+        (1, 1): "Capodanno", (6, 1): "Epifania", (25, 4): "Liberazione", (1, 5): "Festa Lavoro", 
+        (2, 6): "Festa Repubblica", (15, 8): "Ferragosto", (1, 11): "Ognissanti", 
+        (8, 12): "Immacolata", (25, 12): "Natale", (26, 12): "S. Stefano",
+        (dt_p.day, dt_p.month): "Pasqua", (dt_pp.day, dt_pp.month): "Pasquetta", (25, 2): "S. Patrono"
     }
-    return feste
 
-def is_festivo(dt, festivita):
-    return dt.weekday() == 6 or (dt.month, dt.day) in festivita
+def is_festivo(dt, fest):
+    return dt.weekday() == 6 or (dt.day, dt.month) in fest
 
-def is_prefestivo(dt, festivita):
-    # Sabato è sempre prefestivo
+def is_prefestivo(dt, fest):
     if dt.weekday() == 5: return True
-    # Controlla se il giorno dopo è festivo
     domani = dt + timedelta(days=1)
-    return is_festivo(domani, festivita)
+    return is_festivo(domani, fest)
 
 def calcola_durata(intervallo):
     try:
@@ -87,7 +83,7 @@ with st.sidebar:
     st.markdown("<div class='sidebar-header'>⚕️ GESTIONE</div>", unsafe_allow_html=True)
     anno_sel = st.number_input("Anno:", 2024, 2030, 2026)
     mesi_ita = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
-    mese_nome = st.selectbox("Mese:", mesi_ita, index=datetime.now().month - 1)
+    mese_nome = st.selectbox("Mese:", mesi_ita, index=0)
     m_idx_v = mesi_ita.index(mese_nome) + 1
     soglia_ore = st.slider("Soglia Alert Ore:", 100, 250, 160)
     
@@ -104,60 +100,40 @@ with st.sidebar:
         if c_d.button("🗑️", key=f"del_{med}"):
             st.session_state.medici.remove(med); st.rerun()
 
-    st.divider()
-    st.markdown("<div class='sidebar-header'>📅 ASSENZE</div>", unsafe_allow_html=True)
-    m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
-    
-    cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
-    for week in cal_data:
-        cols = st.columns(7)
-        for i, day in enumerate(week):
-            if day != 0:
-                is_abs = day in st.session_state.assenze.get(m_sel, [])
-                if cols[i].button(str(day), key=f"d_{day}", type="primary" if is_abs else "secondary"):
-                    if is_abs: st.session_state.assenze[m_sel].remove(day)
-                    else: st.session_state.assenze[m_sel].append(day)
-                    st.rerun()
-
 # --- 5. INTERFACCIA PRINCIPALE ---
 st.markdown(f"<div class='main-title'>Gestione Turni: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
 
 c1, c2, c3 = st.columns(3)
 with c1:
     st.markdown("<div class='settings-section'><b>🏠 FERIALI</b>", unsafe_allow_html=True)
-    f_n = st.text_input("Notte", "20:00 - 08:00")
+    f_n = st.text_input("Notte", "20:00 - 08:00", key="f_n_input")
 with c2:
     st.markdown("<div class='settings-section'><b>🕒 PREFESTIVI</b>", unsafe_allow_html=True)
-    p_m = st.text_input("Mattina (10-14)", "10:00 - 14:00")
-    p_p = st.text_input("Pomeriggio (14-20)", "14:00 - 20:00")
-    p_n = st.text_input("Notte", "20:00 - 08:00", key="pn")
+    p_m_h = st.text_input("Mattina (10-14)", "10:00 - 14:00", key="p_m_input")
+    p_p_h = st.text_input("Pomeriggio (14-20)", "14:00 - 20:00", key="p_p_input")
+    p_n_h = st.text_input("Notte", "20:00 - 08:00", key="p_n_input")
 with c3:
     st.markdown("<div class='settings-section'><b>🚩 FESTIVI</b>", unsafe_allow_html=True)
-    fes_m = st.text_input("Mattina (08-14)", "08:00 - 14:00")
-    fes_p = st.text_input("Pomeriggio (14-20)", "14:00 - 20:00")
-    fes_n = st.text_input("Notte", "20:00 - 08:00", key="fn")
+    fes_m_h = st.text_input("Mattina (08-14)", "08:00 - 14:00", key="fes_m_input")
+    fes_p_h = st.text_input("Pomeriggio (14-20)", "14:00 - 20:00", key="fes_p_input")
+    fes_n_h = st.text_input("Notte", "20:00 - 08:00", key="fes_n_input")
 
 if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
     gg_m = calendar.monthrange(anno_sel, m_idx_v)[1]
     res = []
-    u_n = None # Ultimo medico della notte
+    u_n = None 
     g_short = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
     
     for d in range(1, gg_m + 1):
         dt = datetime(anno_sel, m_idx_v, d)
-        wd = dt.weekday()
-        nome_f = fest.get((m_idx_v, d), "")
-        
-        # Determina tipo giorno
-        if is_festivo(dt, fest): tipo = "Festivo"
-        elif is_prefestivo(dt, fest): tipo = "Prefestivo"
-        else: tipo = "Feriale"
+        nome_f = fest.get((d, m_idx_v), "")
+        tipo = "Festivo" if is_festivo(dt, fest) else ("Prefestivo" if is_prefestivo(dt, fest) else "Feriale")
         
         disp = [m for m in st.session_state.medici if d not in st.session_state.assenze.get(m, [])]
         if not disp: disp = st.session_state.medici
         
-        # Vincolo: Non due notti consecutive
+        # Filtro per evitare notti consecutive
         cand_notte = [m for m in disp if m != u_n] or disp
         
         m_m, p_m_v, n_m, h_m, h_p, h_n = "---", "---", "---", "---", "---", "---"
@@ -166,29 +142,23 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
             m_m = random.choice(disp)
             p_m_v = random.choice([m for m in disp if m != m_m] or disp)
             n_m = random.choice([m for m in cand_notte if m not in [m_m, p_m_v]] or cand_notte)
-            h_m, h_p, h_n = fes_m, fes_p, fes_n
+            h_m, h_p, h_n = fes_m_h, fes_p_h, fes_n_h
         elif tipo == "Prefestivo":
             m_m = random.choice(disp)
             p_m_v = random.choice([m for m in disp if m != m_m] or disp)
             n_m = random.choice([m for m in cand_notte if m not in [m_m, p_m_v]] or cand_notte)
-            h_m, h_p, h_n = p_m, p_p, p_n
-        else: # Feriale
+            h_m, h_p, h_n = p_m_h, p_p_h, p_n_h
+        else:
             n_m = random.choice(cand_notte)
             h_n = f_n
             
         u_n = n_m
-        res.append({"Data": f"{d} {g_short[wd]}", "Info": nome_f, "Tipo": tipo, "Mattina": m_m, "Pomeriggio": p_m_v, "Notte": n_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
+        res.append({"Data": f"{d} {g_short[dt.weekday()]}", "Info": nome_f, "Tipo": tipo, "Mattina": m_m, "Pomeriggio": p_m_v, "Notte": n_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
     
     st.session_state.db_turni = pd.DataFrame(res)
 
-# --- 6. RIEPILOGO E PDF ---
+# --- 6. VISUALIZZAZIONE E PDF ---
 if not st.session_state.db_turni.empty:
-    ore_m = {m: 0.0 for m in st.session_state.medici}
-    for _, r in st.session_state.db_turni.iterrows():
-        ore_m[r["Mattina"]] = ore_m.get(r["Mattina"], 0) + calcola_durata(r["H_M"])
-        ore_m[r["Pomeriggio"]] = ore_m.get(r["Pomeriggio"], 0) + calcola_durata(r["H_P"])
-        ore_m[r["Notte"]] = ore_m.get(r["Notte"], 0) + calcola_durata(r["H_N"])
-
     st.session_state.db_turni = st.data_editor(st.session_state.db_turni, use_container_width=True, hide_index=True)
 
     def genera_pdf():
@@ -196,35 +166,20 @@ if not st.session_state.db_turni.empty:
         doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.5*cm, bottomMargin=0.5*cm, leftMargin=0.5*cm, rightMargin=0.5*cm)
         elements = []
         styles = getSampleStyleSheet()
-        
-        # TITOLO RICHIESTO
         elements.append(Paragraph(f"<b>C.A PORTO EMPEDOCLE - {mese_nome.upper()} {anno_sel}</b>", styles['Title']))
         elements.append(Spacer(1, 10))
         
         data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
-        t_styles = [
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('FONTSIZE', (0,0), (-1,-1), 7),
-            ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)
-        ]
+        t_styles = [('GRID', (0,0), (-1,-1), 0.5, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTSIZE', (0,0), (-1,-1), 7), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]
         
         for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
             idx = i + 1
-            fest_txt = f" ({r['Info']})" if r['Info'] else ""
-            data.append([
-                f"{r['Data']}{fest_txt}", 
-                r["Tipo"], 
-                f"{r['Mattina']}\n{r['H_M']}" if r['Mattina']!="---" else "---",
-                f"{r['Pomeriggio']}\n{r['H_P']}" if r['Pomeriggio']!="---" else "---",
-                f"{r['Notte']}\n{r['H_N']}" if r['Notte']!="---" else "---"
-            ])
+            f_txt = f" ({r['Info']})" if r['Info'] else ""
+            data.append([f"{r['Data']}{f_txt}", r["Tipo"], f"{r['Mattina']}\n{r['H_M']}" if r['Mattina']!="---" else "---", f"{r['Pomeriggio']}\n{r['H_P']}" if r['Pomeriggio']!="---" else "---", f"{r['Notte']}\n{r['H_N']}" if r['Notte']!="---" else "---"])
             if r["Tipo"] == "Festivo": t_styles.append(('BACKGROUND', (0, idx), (-1, idx), colors.lightpink))
             elif r["Tipo"] == "Prefestivo": t_styles.append(('BACKGROUND', (0, idx), (-1, idx), colors.lightyellow))
         
-        table = Table(data, colWidths=[3*cm, 2.5*cm, 4.5*cm, 4.5*cm, 4.5*cm])
+        table = Table(data, colWidths=[3*cm, 2.2*cm, 4.6*cm, 4.6*cm, 4.6*cm])
         table.setStyle(TableStyle(t_styles))
         elements.append(table)
         doc.build(elements)
