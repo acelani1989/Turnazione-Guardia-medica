@@ -12,13 +12,14 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 
 # --- 1. CONFIGURAZIONE ---
-st.set_page_config(page_title="C.A. Porto Empedocle - Gestione Turni", layout="wide")
+st.set_page_config(page_title="C.A. Porto Empedocle - Pro", layout="wide")
 
 st.markdown("""
     <style>
     .stApp { background-color: #f7fafc; }
     .main-title { color: #2c5282; font-weight: 800; font-size: 2.2rem; text-align: center; margin-bottom: 20px; }
     .sidebar-header { color: #2b6cb0; font-weight: 700; border-bottom: 2px solid #bee3f8; padding-bottom: 5px; margin-bottom: 15px; }
+    .alert-box { padding: 10px; background-color: #fff3cd; border-left: 5px solid #ffca28; color: #856404; border-radius: 5px; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -39,20 +40,13 @@ def get_festivita(anno):
     g_p, m_p = calcola_pasqua(anno)
     dt_p = datetime(anno, m_p, g_p)
     dt_pp = dt_p + timedelta(days=1)
-    return {
-        (1, 1): "Capodanno", (6, 1): "Epifania", (25, 4): "Liberazione", (1, 5): "Festa Lavoro", 
-        (2, 6): "Festa Repubblica", (15, 8): "Ferragosto", (1, 11): "Ognissanti", 
-        (8, 12): "Immacolata", (25, 12): "Natale", (26, 12): "S. Stefano",
-        (dt_p.day, dt_p.month): "Pasqua", (dt_pp.day, dt_pp.month): "Pasquetta", (25, 2): "S. Patrono"
-    }
+    return {(1, 1): "Capodanno", (6, 1): "Epifania", (25, 4): "Liberazione", (1, 5): "Festa Lavoro", 
+            (2, 6): "Festa Repubblica", (15, 8): "Ferragosto", (1, 11): "Ognissanti", 
+            (8, 12): "Immacolata", (25, 12): "Natale", (26, 12): "S. Stefano",
+            (dt_p.day, dt_p.month): "Pasqua", (dt_pp.day, dt_pp.month): "Pasquetta", (25, 2): "S. Patrono"}
 
-def is_festivo(dt, fest):
-    return dt.weekday() == 6 or (dt.day, dt.month) in fest
-
-def is_prefestivo(dt, fest):
-    if dt.weekday() == 5: return True
-    domani = dt + timedelta(days=1)
-    return is_festivo(domani, fest)
+def is_festivo(dt, fest): return dt.weekday() == 6 or (dt.day, dt.month) in fest
+def is_prefestivo(dt, fest): return dt.weekday() == 5 or is_festivo(dt + timedelta(days=1), fest)
 
 # --- 3. SESSION STATE ---
 if 'medici' not in st.session_state: st.session_state.medici = ["Piscopo", "Celani", "Lombardo", "Siracusa"]
@@ -68,124 +62,135 @@ with st.sidebar:
     m_idx_v = mesi_ita.index(mese_nome) + 1
     
     st.divider()
-    st.markdown("<div class='sidebar-header'>📅 SCORCIATOIE INDISPONIBILITÀ</div>", unsafe_allow_html=True)
-    m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
-    
+    st.markdown("<div class='sidebar-header'>⚖️ LIMITI ORE</div>", unsafe_allow_html=True)
+    ore_max = st.slider("Limite ore mensili (Alert):", 120, 250, 180)
+
+    st.divider()
+    st.markdown("<div class='sidebar-header'>📅 SCORCIATOIE</div>", unsafe_allow_html=True)
+    m_sel = st.selectbox("Medico:", st.session_state.medici)
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
     
-    # Feriali
-    st.write("**Giorni Feriali (Solo Notte):**")
-    cols_fer = st.columns(5)
-    g_feriali = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"]
-    for i, label in enumerate(g_feriali):
-        if cols_fer[i].button(label):
-            for sett in cal_data:
-                d = sett[i]
-                if d != 0:
-                    curr = st.session_state.assenze[m_sel].get(d, [])
-                    st.session_state.assenze[m_sel][d] = list(set(curr + ["N"])) if "N" not in curr else [f for f in curr if f != "N"]
+    st.write("**Feriali (Notte):**")
+    cols_f = st.columns(5)
+    for i, l in enumerate(["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"]):
+        if cols_f[i].button(l):
+            for s in cal_data:
+                d = s[i]
+                if d != 0: st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + ["N"]))
             st.rerun()
 
-    # Sabato
-    st.write("**Sabato (Tutte le fasce):**")
-    c_s1, c_s2, c_s3 = st.columns(3)
-    if c_s1.button("Sabato Mattina"):
-        for sett in cal_data:
-            d = sett[5]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["M"]))}))
+    st.write("**Weekend:**")
+    c_s = st.columns(3)
+    if c_s[0].button("Sab Mattina"):
+        for s in cal_data: (s[5] != 0 and st.session_state.assenze[m_sel].update({s[5]: list(set(st.session_state.assenze[m_sel].get(s[5], []) + ["M"]))}))
         st.rerun()
-    if c_s2.button("Sabato Pomeriggio"):
-        for sett in cal_data:
-            d = sett[5]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["P"]))}))
+    if c_s[1].button("Sab Pom"):
+        for s in cal_data: (s[5] != 0 and st.session_state.assenze[m_sel].update({s[5]: list(set(st.session_state.assenze[m_sel].get(s[5], []) + ["P"]))}))
         st.rerun()
-    if c_s3.button("Sabato Notte"):
-        for sett in cal_data:
-            d = sett[5]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["N"]))}))
+    if c_s[2].button("Sab Notte"):
+        for s in cal_data: (s[5] != 0 and st.session_state.assenze[m_sel].update({s[5]: list(set(st.session_state.assenze[m_sel].get(s[5], []) + ["N"]))}))
         st.rerun()
 
-    # Domenica
-    st.write("**Domenica (Tutte le fasce):**")
-    c_d1, c_d2, c_d3 = st.columns(3)
-    if c_d1.button("Domenica Mattina"):
-        for sett in cal_data:
-            d = sett[6]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["M"]))}))
+    c_d = st.columns(3)
+    if c_d[0].button("Dom Mattina"):
+        for s in cal_data: (s[6] != 0 and st.session_state.assenze[m_sel].update({s[6]: list(set(st.session_state.assenze[m_sel].get(s[6], []) + ["M"]))}))
         st.rerun()
-    if c_d2.button("Domenica Pomeriggio"):
-        for sett in cal_data:
-            d = sett[6]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["P"]))}))
+    if c_d[1].button("Dom Pom"):
+        for s in cal_data: (s[6] != 0 and st.session_state.assenze[m_sel].update({s[6]: list(set(st.session_state.assenze[m_sel].get(s[6], []) + ["P"]))}))
         st.rerun()
-    if c_d3.button("Domenica Notte"):
-        for sett in cal_data:
-            d = sett[6]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["N"]))}))
+    if c_d[2].button("Dom Notte"):
+        for s in cal_data: (s[6] != 0 and st.session_state.assenze[m_sel].update({s[6]: list(set(st.session_state.assenze[m_sel].get(s[6], []) + ["N"]))}))
         st.rerun()
 
     st.divider()
-    # Calendario Puntuale
-    st.write("**Calendario Manuale:**")
-    for week in cal_data:
-        cols = st.columns(7)
-        for i, day in enumerate(week):
-            if day != 0:
-                curr_abs = st.session_state.assenze[m_sel].get(day, [])
-                label = f"{day}\n{''.join(curr_abs)}" if curr_abs else f"{day}"
-                if cols[i].button(label, key=f"cl_{day}", type="primary" if curr_abs else "secondary"):
-                    st.session_state.assenze[m_sel][day] = ["M", "P", "N"] if not curr_abs else []
-                    st.rerun()
+    if st.button("🗑️ SVUOTA ASSENZE MEDICO", use_container_width=True):
+        st.session_state.assenze[m_sel] = {}; st.rerun()
+    st.download_button("💾 BACKUP JSON", json.dumps(st.session_state.assenze), f"backup_{mese_nome}.json", use_container_width=True)
 
-    st.divider()
-    # Gestione Dati
-    if st.button("🗑️ SVUOTA TUTTE LE ASSENZE DEL MEDICO", type="secondary", use_container_width=True):
-        st.session_state.assenze[m_sel] = {}
-        st.rerun()
-
-    backup_data = json.dumps({"medici": st.session_state.medici, "assenze": st.session_state.assenze}, indent=4)
-    st.download_button("💾 SCARICA BACKUP DATI (JSON)", backup_data, f"backup_porto_empedocle_{mese_nome}.json", "application/json", use_container_width=True)
-
-# --- 5. INTERFACCIA PRINCIPALE ---
+# --- 5. LOGICA GENERAZIONE ---
 st.markdown(f"<div class='main-title'>C.A. Porto Empedocle - {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
 
-if st.button("🚀 GENERA TURNAZIONE", type="primary", use_container_width=True):
+if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
     gg_m = calendar.monthrange(anno_sel, m_idx_v)[1]
     res = []
     u_n = None 
-    g_it = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
     
     for d in range(1, gg_m + 1):
         dt = datetime(anno_sel, m_idx_v, d)
         tipo = "Festivo" if is_festivo(dt, fest) else ("Prefestivo" if is_prefestivo(dt, fest) else "Feriale")
         
+        # Orari e Ore numeriche per conteggio
+        h_m_txt, h_p_txt, h_n_txt = "---", "---", "20:00 - 08:00"
+        ore_m, ore_p, ore_n = 0, 0, 12
+        
+        if tipo == "Festivo":
+            h_m_txt, h_p_txt = "08:00 - 14:00", "14:00 - 20:00"
+            ore_m, ore_p = 6, 6
+        elif tipo == "Prefestivo":
+            h_m_txt, h_p_txt = "10:00 - 14:00", "14:00 - 20:00"
+            ore_m, ore_p = 4, 6
+
         disp_m = [m for m in st.session_state.medici if "M" not in st.session_state.assenze[m].get(d, [])]
         disp_p = [m for m in st.session_state.medici if "P" not in st.session_state.assenze[m].get(d, [])]
         disp_n = [m for m in st.session_state.medici if "N" not in st.session_state.assenze[m].get(d, [])]
 
-        cand_n = [m for m in disp_n if m != u_n] or disp_n
-        n_m = random.choice(cand_n); u_n = n_m
-        
-        m_m, p_m_v, h_m, h_p, h_n = "---", "---", "---", "---", "---"
-        
-        if tipo in ["Festivo", "Prefestivo"]:
-            h_m = "08:00 - 14:00" if tipo == "Festivo" else "10:00 - 14:00"
-            h_p, h_n = "14:00 - 20:00", "20:00 - 08:00"
-            m_m = random.choice([m for m in disp_m if m != n_m] or disp_m)
-            p_m_v = random.choice([m for m in disp_p if m not in [n_m, m_m]] or disp_p)
-        else:
-            h_n = "20:00 - 08:00"
+        n_m = random.choice([m for m in disp_n if m != u_n] or disp_n); u_n = n_m
+        m_m = random.choice([m for m in disp_m if m != n_m] or disp_m) if ore_m > 0 else "---"
+        p_m = random.choice([m for m in disp_p if m not in [n_m, m_m]] or disp_p) if ore_p > 0 else "---"
 
-        res.append({"Data": f"{d} {g_it[dt.weekday()]}", "Tipo": tipo, "Mattina": m_m, "Pomeriggio": p_m_v, "Notte": n_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
+        res.append({"Data": f"{d} {['LUN','MAR','MER','GIO','VEN','SAB','DOM'][dt.weekday()]}", "Tipo": tipo, 
+                    "Mattina": m_m, "Pomeriggio": p_m, "Notte": n_m, 
+                    "OreM": ore_m, "OreP": ore_p, "OreN": ore_n,
+                    "H_M": h_m_txt, "H_P": h_p_txt, "H_N": h_n_txt})
     st.session_state.db_turni = pd.DataFrame(res)
 
+# --- 6. STATISTICHE E ALERT ---
 if not st.session_state.db_turni.empty:
-    st.data_editor(st.session_state.db_turni, use_container_width=True, hide_index=True)
+    stats = []
+    for m in st.session_state.medici:
+        o_m = st.session_state.db_turni[st.session_state.db_turni['Mattina'] == m]['OreM'].sum()
+        o_p = st.session_state.db_turni[st.session_state.db_turni['Pomeriggio'] == m]['OreP'].sum()
+        o_n = st.session_state.db_turni[st.session_state.db_turni['Notte'] == m]['OreN'].sum()
+        tot = o_m + o_p + o_n
+        stats.append({"Medico": m, "Ore Totali": tot})
+        if tot > ore_max:
+            st.markdown(f"<div class='alert-box'>⚠️ <b>{m}</b> ha superato il limite con {tot} ore!</div>", unsafe_allow_html=True)
+
+    st.subheader("Tabella Turni")
+    st.data_editor(st.session_state.db_turni[["Data", "Tipo", "Mattina", "Pomeriggio", "Notte"]], use_container_width=True, hide_index=True)
     
+    st.subheader("📊 Riepilogo Ore Mensili")
+    st.table(pd.DataFrame(stats))
+
+    # --- 7. PDF ---
     def genera_pdf():
         buf = io.BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.5*cm, bottomMargin=0.5*cm, leftMargin=0.5*cm, rightMargin=0.5*cm)
-        elements = [Paragraph(f"<b>C.A. Porto Empedocle - {mese_nome.upper()} {anno_sel}</b>", getSampleStyleSheet()['Title'])]
+        doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1*cm, bottomMargin=1*cm, leftMargin=1*cm, rightMargin=1*cm)
+        elements = [Paragraph(f"<b>TURNI C.A. PORTO EMPEDOCLE - {mese_nome.upper()}</b>", getSampleStyleSheet()['Title']), Spacer(1, 10)]
+        
+        # Tabella Turni
         data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
-        for r in st.session_state.db_turni.to_dict('records'):
-            data.append([r['Data'], r["Tipo"], f"{r['Mattina']}\n({r['H_M']})", f"{r['Pomeriggio']}\n({r['H_P']})", f"{r['Notte']}\n({r['H_N']})"])
-        table = Table(data, colWidths=[2.8*cm, 2.2*cm, 4.8*cm, 4.8*cm, 4.8*cm])
-        table.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]))
-        elements.append(table); doc.build(elements); return buf.getvalue()
+        style = [('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 8), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]
+        
+        for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
+            data.append([r['Data'], r["Tipo"], f"{r['Mattina']}\n{r['H_M']}", f"{r['Pomeriggio']}\n{r['H_P']}", f"{r['Notte']}\n{r['H_N']}"])
+            if r["Tipo"] == "Festivo": style.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 0.8, 0.8)))
+            elif r["Tipo"] == "Prefestivo": style.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 1, 0.85)))
+        
+        t1 = Table(data, colWidths=[2.2*cm, 2*cm, 4.8*cm, 4.8*cm, 4.8*cm])
+        t1.setStyle(TableStyle(style))
+        elements.append(t1)
+        elements.append(Spacer(1, 15))
+        
+        # Tabella Statistiche
+        elements.append(Paragraph("<b>RIEPILOGO ORE TOTALI</b>", getSampleStyleSheet()['Normal']))
+        data_s = [["MEDICO", "ORE TOTALI"]]
+        for s in stats: data_s.append([s['Medico'], str(s['Ore Totali'])])
+        t2 = Table(data_s, colWidths=[5*cm, 4*cm])
+        t2.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.lightgrey)]))
+        elements.append(t2)
+        
+        doc.build(elements); return buf.getvalue()
 
-    st.download_button("📥 SCARICA TURNI IN PDF", genera_pdf(), f"Turni_CA_Porto_Empedocle_{mese_nome}.pdf", "application/pdf", use_container_width=True)
+    st.download_button("📥 SCARICA PDF COMPLETO", genera_pdf(), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True)
