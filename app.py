@@ -73,8 +73,8 @@ with st.sidebar:
     
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
     
-    # Scorciatoie Feriali
-    st.write("**Feriali (Solo Notte):**")
+    # Feriali
+    st.write("**Feriali (Notte):**")
     cols_fer = st.columns(5)
     g_feriali = ["LUN", "MAR", "MER", "GIO", "VEN"]
     for i, label in enumerate(g_feriali):
@@ -86,58 +86,39 @@ with st.sidebar:
                     st.session_state.assenze[m_sel][d] = list(set(curr + ["N"])) if "N" not in curr else [f for f in curr if f != "N"]
             st.rerun()
 
-    # Scorciatoie Weekend (Mattina, Pomeriggio, Notte)
-    st.write("**Sabato (Tutte le fasce):**")
+    # Weekend
+    st.write("**Sabato (Fasce):**")
     c_s1, c_s2, c_s3 = st.columns(3)
-    if c_s1.button("SAB Matt"):
+    if c_s1.button("SAB M"):
         for sett in cal_data:
-            d = sett[5]
-            if d != 0:
-                curr = st.session_state.assenze[m_sel].get(d, [])
-                st.session_state.assenze[m_sel][d] = list(set(curr + ["M"])) if "M" not in curr else [f for f in curr if f != "M"]
+            d = sett[5]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["M"]))}))
         st.rerun()
-    if c_s2.button("SAB Pom"):
+    if c_s2.button("SAB P"):
         for sett in cal_data:
-            d = sett[5]
-            if d != 0:
-                curr = st.session_state.assenze[m_sel].get(d, [])
-                st.session_state.assenze[m_sel][d] = list(set(curr + ["P"])) if "P" not in curr else [f for f in curr if f != "P"]
+            d = sett[5]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["P"]))}))
         st.rerun()
-    if c_s3.button("SAB Notte"):
+    if c_s3.button("SAB N"):
         for sett in cal_data:
-            d = sett[5]
-            if d != 0:
-                curr = st.session_state.assenze[m_sel].get(d, [])
-                st.session_state.assenze[m_sel][d] = list(set(curr + ["N"])) if "N" not in curr else [f for f in curr if f != "N"]
+            d = sett[5]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["N"]))}))
         st.rerun()
 
-    st.write("**Domenica (Tutte le fasce):**")
+    st.write("**Domenica (Fasce):**")
     c_d1, c_d2, c_d3 = st.columns(3)
-    if c_d1.button("DOM Matt"):
+    if c_d1.button("DOM M"):
         for sett in cal_data:
-            d = sett[6]
-            if d != 0:
-                curr = st.session_state.assenze[m_sel].get(d, [])
-                st.session_state.assenze[m_sel][d] = list(set(curr + ["M"])) if "M" not in curr else [f for f in curr if f != "M"]
+            d = sett[6]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["M"]))}))
         st.rerun()
-    if c_d2.button("DOM Pom"):
+    if c_d2.button("DOM P"):
         for sett in cal_data:
-            d = sett[6]
-            if d != 0:
-                curr = st.session_state.assenze[m_sel].get(d, [])
-                st.session_state.assenze[m_sel][d] = list(set(curr + ["P"])) if "P" not in curr else [f for f in curr if f != "P"]
+            d = sett[6]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["P"]))}))
         st.rerun()
-    if c_d3.button("DOM Notte"):
+    if c_d3.button("DOM N"):
         for sett in cal_data:
-            d = sett[6]
-            if d != 0:
-                curr = st.session_state.assenze[m_sel].get(d, [])
-                st.session_state.assenze[m_sel][d] = list(set(curr + ["N"])) if "N" not in curr else [f for f in curr if f != "N"]
+            d = sett[6]; (d != 0 and st.session_state.assenze[m_sel].update({d: list(set(st.session_state.assenze[m_sel].get(d, []) + ["N"]))}))
         st.rerun()
 
     st.divider()
-    st.write("**Calendario Manuale:**")
-    # Qui il click sul giorno aggiunge/toglie tutto per semplicità visto che abbiamo tolto il selettore fascia
+    # Calendario Manuale
     for week in cal_data:
         cols = st.columns(7)
         for i, day in enumerate(week):
@@ -145,23 +126,20 @@ with st.sidebar:
                 curr_abs = st.session_state.assenze[m_sel].get(day, [])
                 label = f"{day}\n{''.join(curr_abs)}" if curr_abs else f"{day}"
                 if cols[i].button(label, key=f"cl_{day}", type="primary" if curr_abs else "secondary"):
-                    # Se vuoto mette tutto, se pieno toglie tutto
                     st.session_state.assenze[m_sel][day] = ["M", "P", "N"] if not curr_abs else []
                     st.rerun()
 
+    st.divider()
+    # --- NUOVI PULSANTI GESTIONE ---
+    if st.button("🗑️ SVUOTA ASSENZE MEDICO", type="secondary", use_container_width=True):
+        st.session_state.assenze[m_sel] = {}
+        st.rerun()
+
+    backup_data = json.dumps({"medici": st.session_state.medici, "assenze": st.session_state.assenze}, indent=4)
+    st.download_button("💾 SCARICA BACKUP DATI", backup_data, f"backup_turni_{mese_nome}.json", "application/json", use_container_width=True)
+
 # --- 5. INTERFACCIA PRINCIPALE ---
 st.markdown(f"<div class='main-title'>C.A. Porto Empedocle - {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
-
-c1, c2, c3 = st.columns(3)
-with c1:
-    st.info("🏠 FERIALI: Notte 20-08")
-    f_n_h = "20:00 - 08:00"
-with c2:
-    st.warning("🕒 PREFESTIVI: 10-14 / 14-20 / 20-08")
-    p_m_h, p_p_h, p_n_h = "10:00 - 14:00", "14:00 - 20:00", "20:00 - 08:00"
-with c3:
-    st.error("🚩 FESTIVI: 08-14 / 14-20 / 20-08")
-    fes_m_h, fes_p_h, fes_n_h = "08:00 - 14:00", "14:00 - 20:00", "20:00 - 08:00"
 
 if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
@@ -179,25 +157,19 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
         disp_n = [m for m in st.session_state.medici if "N" not in st.session_state.assenze[m].get(d, [])]
 
         cand_n = [m for m in disp_n if m != u_n] or disp_n
-        n_m = random.choice(cand_n)
-        u_n = n_m
+        n_m = random.choice(cand_n); u_n = n_m
         
         m_m, p_m_v, h_m, h_p, h_n = "---", "---", "---", "---", "---"
         
         if tipo in ["Festivo", "Prefestivo"]:
-            h_m = fes_m_h if tipo == "Festivo" else p_m_h
-            h_p = fes_p_h if tipo == "Festivo" else p_p_h
-            h_n = fes_n_h if tipo == "Festivo" else p_n_h
+            h_m = "08:00 - 14:00" if tipo == "Festivo" else "10:00 - 14:00"
+            h_p, h_n = "14:00 - 20:00", "20:00 - 08:00"
             m_m = random.choice([m for m in disp_m if m != n_m] or disp_m)
             p_m_v = random.choice([m for m in disp_p if m not in [n_m, m_m]] or disp_p)
         else:
-            h_n = f_n_h
+            h_n = "20:00 - 08:00"
 
-        res.append({
-            "Data": f"{d} {g_it[dt.weekday()]}", "Tipo": tipo,
-            "Mattina": m_m, "Pomeriggio": p_m_v, "Notte": n_m,
-            "H_M": h_m, "H_P": h_p, "H_N": h_n
-        })
+        res.append({"Data": f"{d} {g_it[dt.weekday()]}", "Tipo": tipo, "Mattina": m_m, "Pomeriggio": p_m_v, "Notte": n_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
     st.session_state.db_turni = pd.DataFrame(res)
 
 if not st.session_state.db_turni.empty:
@@ -206,15 +178,12 @@ if not st.session_state.db_turni.empty:
     def genera_pdf():
         buf = io.BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.5*cm, bottomMargin=0.5*cm, leftMargin=0.5*cm, rightMargin=0.5*cm)
-        elements = [Paragraph(f"<b>C.A. Porto Empedocle - {mese_nome.upper()} {anno_sel}</b>", getSampleStyleSheet()['Title']), Spacer(1, 10)]
+        elements = [Paragraph(f"<b>C.A. Porto Empedocle - {mese_nome.upper()} {anno_sel}</b>", getSampleStyleSheet()['Title'])]
         data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
         for r in st.session_state.db_turni.to_dict('records'):
             data.append([r['Data'], r["Tipo"], f"{r['Mattina']}\n({r['H_M']})", f"{r['Pomeriggio']}\n({r['H_P']})", f"{r['Notte']}\n({r['H_N']})"])
-        
         table = Table(data, colWidths=[2.8*cm, 2.2*cm, 4.8*cm, 4.8*cm, 4.8*cm])
         table.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]))
-        elements.append(table)
-        doc.build(elements)
-        return buf.getvalue()
+        elements.append(table); doc.build(elements); return buf.getvalue()
 
     st.download_button("📥 Scarica PDF", genera_pdf(), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True)
