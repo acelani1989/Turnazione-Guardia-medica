@@ -43,11 +43,9 @@ def get_festivita(anno):
         mese = (h + l - 7 * m + 114) // 31
         giorno = ((h + l - 7 * m + 114) % 31) + 1
         return giorno, mese
-    
     g_p, m_p = calcola_pasqua(anno)
     dt_p = datetime(anno, m_p, g_p)
     dt_pp = dt_p + timedelta(days=1)
-    
     return {
         (1, 1): "Capodanno", (6, 1): "Epifania", (25, 4): "Liberazione", (1, 5): "Festa Lavoro", 
         (2, 6): "Festa Repubblica", (15, 8): "Ferragosto", (1, 11): "Ognissanti", 
@@ -63,27 +61,10 @@ def is_prefestivo(dt, fest):
     domani = dt + timedelta(days=1)
     return is_festivo(domani, fest)
 
-def calcola_durata(intervallo):
-    try:
-        if "---" in str(intervallo) or not intervallo: return 0
-        parti = intervallo.split("-")
-        inizio = datetime.strptime(parti[0].strip(), "%H:%M")
-        fine = datetime.strptime(parti[1].strip(), "%H:%M")
-        durata = (fine - inizio).seconds / 3600
-        return durata if durata > 0 else durata + 24
-    except: return 0
-
 # --- 3. SESSION STATE ---
 if 'medici' not in st.session_state: st.session_state.medici = ["Piscopo", "Celani", "Lombardo", "Siracusa"]
-# Inizializzazione sicura delle assenze come dizionario di dizionari
 if 'assenze' not in st.session_state or not isinstance(st.session_state.assenze, dict):
     st.session_state.assenze = {m: {} for m in st.session_state.medici}
-
-# Controllo integrità per ogni medico (trasforma liste vecchie in dizionari se necessario)
-for m in st.session_state.medici:
-    if m not in st.session_state.assenze or not isinstance(st.session_state.assenze[m], dict):
-        st.session_state.assenze[m] = {}
-
 if 'db_turni' not in st.session_state: st.session_state.db_turni = pd.DataFrame()
 
 # --- 4. SIDEBAR ---
@@ -95,10 +76,16 @@ with st.sidebar:
     m_idx_v = mesi_ita.index(mese_nome) + 1
     
     st.divider()
-    st.markdown("<div class='sidebar-header'>📅 ASSENZE DETTAGLIATE</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sidebar-header'>📅 INDISPONIBILITÀ</div>", unsafe_allow_html=True)
     m_sel = st.selectbox("Medico:", st.session_state.medici)
-    fascia = st.radio("Assenza per:", ["Tutto il giorno", "Mattina", "Pomeriggio", "Notte"], horizontal=True)
-    map_fascia = {"Tutto il giorno": ["M", "P", "N"], "Mattina": ["M"], "Pomeriggio": ["P"], "Notte": ["N"]}
+    fascia = st.radio("Seleziona fascia di assenza:", ["Tutto il giorno", "Mattina (08-14 / 10-14)", "Pomeriggio (14-20)", "Notte (20-08)"])
+    
+    map_fascia = {
+        "Tutto il giorno": ["M", "P", "N"],
+        "Mattina (08-14 / 10-14)": ["M"],
+        "Pomeriggio (14-20)": ["P"],
+        "Notte (20-08)": ["N"]
+    }
 
     # Scorciatoie giorni (LUN, MAR...)
     g_short = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
@@ -115,13 +102,12 @@ with st.sidebar:
                     st.session_state.assenze[m_sel][d] = list(set(current + map_fascia[fascia]))
             st.rerun()
 
-    # Griglia Calendario
+    # Calendario
     for week in cal_data:
         cols = st.columns(7)
         for i, day in enumerate(week):
             if day != 0:
                 current_abs = st.session_state.assenze[m_sel].get(day, [])
-                # Mostra le iniziali delle assenze sul bottone
                 label = f"{day}\n{''.join(current_abs)}" if current_abs else f"{day}"
                 if cols[i].button(label, key=f"btn_{m_sel}_{day}", type="primary" if current_abs else "secondary"):
                     if all(f in current_abs for f in map_fascia[fascia]):
@@ -131,7 +117,7 @@ with st.sidebar:
                     st.rerun()
 
     st.divider()
-    st.download_button("📥 Scarica Backup", json.dumps({"medici": st.session_state.medici, "assenze": st.session_state.assenze}), f"backup_{mese_nome}.json", use_container_width=True)
+    st.download_button("📥 Scarica Backup", json.dumps({"medici": st.session_state.medici, "assenze": st.session_state.assenze}), f"backup_{mese_nome}.json")
 
 # --- 5. INTERFACCIA PRINCIPALE ---
 st.markdown(f"<div class='main-title'>C.A PORTO EMPEDOCLE: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
@@ -162,12 +148,12 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
         nome_f = fest.get((d, m_idx_v), "")
         tipo = "Festivo" if is_festivo(dt, fest) else ("Prefestivo" if is_prefestivo(dt, fest) else "Feriale")
         
-        # Filtro disponibilità fasce
+        # Filtro disponibilità
         disp_m = [m for m in st.session_state.medici if "M" not in st.session_state.assenze[m].get(d, [])]
         disp_p = [m for m in st.session_state.medici if "P" not in st.session_state.assenze[m].get(d, [])]
         disp_n = [m for m in st.session_state.medici if "N" not in st.session_state.assenze[m].get(d, [])]
 
-        # Logica Notte (evita consecutive)
+        # Scegli Notte (evita consecutive)
         cand_n = [m for m in disp_n if m != u_n] or disp_n
         n_m = random.choice(cand_n)
         u_n = n_m
@@ -178,30 +164,27 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
             h_m = f_m_h if tipo == "Festivo" else p_m_h
             h_p = f_p_h if tipo == "Festivo" else p_p_h
             h_n = f_n_h_fest if tipo == "Festivo" else p_n_h
-            # Assegnazione diurna evitando sovrapposizione con chi fa la notte lo stesso giorno
+            # Assegnazione diurna rispettando assenze e impegno notturno
             m_m = random.choice([m for m in disp_m if m != n_m] or disp_m)
             p_m_v = random.choice([m for m in disp_p if m not in [n_m, m_m]] or disp_p)
         else:
             h_n = f_n_h
 
         res.append({
-            "Data": f"{d} {g_short[dt.weekday()]}", 
-            "Info": nome_f, "Tipo": tipo, 
-            "Mattina": m_m, "Pomeriggio": p_m_v, "Notte": n_m, 
+            "Data": f"{d} {g_short[dt.weekday()]}", "Info": nome_f, "Tipo": tipo,
+            "Mattina": m_m, "Pomeriggio": p_m_v, "Notte": n_m,
             "H_M": h_m, "H_P": h_p, "H_N": h_n
         })
-    
     st.session_state.db_turni = pd.DataFrame(res)
 
-# --- 6. RIEPILOGO E PDF ---
+# --- 6. VISUALIZZAZIONE E PDF ---
 if not st.session_state.db_turni.empty:
-    st.session_state.db_turni = st.data_editor(st.session_state.db_turni, use_container_width=True, hide_index=True)
+    st.data_editor(st.session_state.db_turni, use_container_width=True, hide_index=True)
 
     def genera_pdf():
         buf = io.BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.5*cm, bottomMargin=0.5*cm, leftMargin=0.5*cm, rightMargin=0.5*cm)
         elements = [Paragraph(f"<b>C.A PORTO EMPEDOCLE - {mese_nome.upper()} {anno_sel}</b>", getSampleStyleSheet()['Title']), Spacer(1, 10)]
-        
         data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
         t_styles = [('GRID', (0,0), (-1,-1), 0.5, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTSIZE', (0,0), (-1,-1), 7), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]
         
@@ -217,4 +200,4 @@ if not st.session_state.db_turni.empty:
         doc.build(elements)
         return buf.getvalue()
 
-    st.download_button("📥 SCARICA PDF", genera_pdf(), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True, type="primary")
+    st.download_button("📥 SCARICA PDF", genera_pdf(), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True)
