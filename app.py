@@ -75,7 +75,6 @@ def calcola_durata(intervallo):
 
 # --- 3. SESSION STATE ---
 if 'medici' not in st.session_state: st.session_state.medici = ["Piscopo", "Celani", "Lombardo", "Siracusa"]
-# Assenze strutturate: {medico: {giorno: [fasce]}} dove fasce può essere "M", "P", "N"
 if 'assenze' not in st.session_state: st.session_state.assenze = {m: {} for m in st.session_state.medici}
 if 'db_turni' not in st.session_state: st.session_state.db_turni = pd.DataFrame()
 
@@ -86,37 +85,29 @@ with st.sidebar:
     mesi_ita = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
     mese_nome = st.selectbox("Mese:", mesi_ita, index=0)
     m_idx_v = mesi_ita.index(mese_nome) + 1
-    soglia_ore = st.slider("Soglia Alert Ore:", 100, 250, 160)
     
     st.divider()
     st.markdown("<div class='sidebar-header'>📅 ASSENZE DETTAGLIATE</div>", unsafe_allow_html=True)
-    m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
-    fascia_sel = st.radio("Fascia di assenza:", ["Intera Giornata", "Mattina", "Pomeriggio", "Notte"], horizontal=True)
-    
-    mapping = {"Intera Giornata": ["M", "P", "N"], "Mattina": ["M"], "Pomeriggio": ["P"], "Notte": ["N"]}
-    
+    m_sel = st.selectbox("Medico:", st.session_state.medici)
+    fascia = st.radio("Assenza per:", ["Tutto il giorno", "Mattina", "Pomeriggio", "Notte"], horizontal=True)
+    map_fascia = {"Tutto il giorno": ["M", "P", "N"], "Mattina": ["M"], "Pomeriggio": ["P"], "Notte": ["N"]}
+
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
     for week in cal_data:
         cols = st.columns(7)
         for i, day in enumerate(week):
             if day != 0:
-                # Controllo se il giorno ha assenze registrate
                 current_abs = st.session_state.assenze.get(m_sel, {}).get(day, [])
-                label = f"{day}"
-                if current_abs:
-                    label += f" ({''.join(current_abs)})"
-                
-                if cols[i].button(label, key=f"d_{day}", type="primary" if current_abs else "secondary"):
-                    if not current_abs or any(f not in current_abs for f in mapping[fascia_sel]):
-                        # Aggiunge le fasce selezionate
-                        st.session_state.assenze[m_sel][day] = list(set(current_abs + mapping[fascia_sel]))
+                label = f"{day} {''.join(current_abs)}"
+                if cols[i].button(label, key=f"d_{day}_{m_sel}", type="primary" if current_abs else "secondary"):
+                    if not current_abs or any(f not in current_abs for f in map_fascia[fascia]):
+                        st.session_state.assenze[m_sel][day] = list(set(current_abs + map_fascia[fascia]))
                     else:
-                        # Rimuove se già presenti
-                        st.session_state.assenze[m_sel][day] = [f for f in current_abs if f not in mapping[fascia_sel]]
+                        st.session_state.assenze[m_sel][day] = []
                     st.rerun()
 
     st.divider()
-    st.download_button("📥 Scarica Backup", json.dumps({"medici": st.session_state.medici, "assenze": st.session_state.assenze}), f"backup_{mese_nome}.json", use_container_width=True)
+    st.download_button("📥 Scarica Backup", json.dumps({"medici": st.session_state.medici, "assenze": st.session_state.assenze}), f"backup_{mese_nome}.json")
 
 # --- 5. INTERFACCIA PRINCIPALE ---
 st.markdown(f"<div class='main-title'>C.A PORTO EMPEDOCLE: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
@@ -148,15 +139,15 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
         nome_f = fest.get((d, m_idx_v), "")
         tipo = "Festivo" if is_festivo(dt, fest) else ("Prefestivo" if is_prefestivo(dt, fest) else "Feriale")
         
-        # Filtro disponibilità per fascia
+        # Filtro disponibilità
         disp_m = [m for m in st.session_state.medici if "M" not in st.session_state.assenze.get(m, {}).get(d, [])]
         disp_p = [m for m in st.session_state.medici if "P" not in st.session_state.assenze.get(m, {}).get(d, [])]
         disp_n = [m for m in st.session_state.medici if "N" not in st.session_state.assenze.get(m, {}).get(d, [])]
 
-        # Candidati Notte (Costante e senza consecutive)
-        cand_notte = [m for m in disp_n if m != u_n] or disp_n
-        n_m = random.choice(cand_notte)
-        u_n = n_m # Salva per il giorno dopo
+        # Logica Notte (evita consecutive)
+        cand_n = [m for m in disp_n if m != u_n] or disp_n
+        n_m = random.choice(cand_n)
+        u_n = n_m
         
         m_m, p_m_v, h_m, h_p, h_n = "---", "---", "---", "---", "---"
         
@@ -164,11 +155,47 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
             h_m = fes_m_h if tipo == "Festivo" else p_m_h
             h_p = fes_p_h if tipo == "Festivo" else p_p_h
             h_n = fes_n_h if tipo == "Festivo" else p_n_h
-            
-            # Assegnazione diurna rispettando assenze e notte
             m_m = random.choice([m for m in disp_m if m != n_m] or disp_m)
             p_m_v = random.choice([m for m in disp_p if m not in [n_m, m_m]] or disp_p)
         else:
             h_n = f_n_h
 
-        res.append({"Data": f
+        res.append({
+            "Data": f"{d} {g_short[dt.weekday()]}", 
+            "Info": nome_f, 
+            "Tipo": tipo, 
+            "Mattina": m_m, 
+            "Pomeriggio": p_m_v, 
+            "Notte": n_m, 
+            "H_M": h_m, 
+            "H_P": h_p, 
+            "H_N": h_n
+        })
+    
+    st.session_state.db_turni = pd.DataFrame(res)
+
+# --- 6. RIEPILOGO E PDF ---
+if not st.session_state.db_turni.empty:
+    st.session_state.db_turni = st.data_editor(st.session_state.db_turni, use_container_width=True, hide_index=True)
+
+    def genera_pdf():
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.5*cm, bottomMargin=0.5*cm, leftMargin=0.5*cm, rightMargin=0.5*cm)
+        elements = [Paragraph(f"<b>C.A PORTO EMPEDOCLE - {mese_nome.upper()} {anno_sel}</b>", getSampleStyleSheet()['Title']), Spacer(1, 10)]
+        
+        data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
+        t_styles = [('GRID', (0,0), (-1,-1), 0.5, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTSIZE', (0,0), (-1,-1), 7), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]
+        
+        for i, r in enumerate(st.session_state.db_turni.to_dict('records')):
+            idx = i + 1
+            data.append([r['Data'], r["Tipo"], f"{r['Mattina']}\n{r['H_M']}", f"{r['Pomeriggio']}\n{r['H_P']}", f"{r['Notte']}\n{r['H_N']}"])
+            if r["Tipo"] == "Festivo": t_styles.append(('BACKGROUND', (0, idx), (-1, idx), colors.lightpink))
+            elif r["Tipo"] == "Prefestivo": t_styles.append(('BACKGROUND', (0, idx), (-1, idx), colors.lightyellow))
+        
+        table = Table(data, colWidths=[2.8*cm, 2.2*cm, 4.8*cm, 4.8*cm, 4.8*cm])
+        table.setStyle(TableStyle(t_styles))
+        elements.append(table)
+        doc.build(elements)
+        return buf.getvalue()
+
+    st.download_button("📥 SCARICA PDF", genera_pdf(), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True)
