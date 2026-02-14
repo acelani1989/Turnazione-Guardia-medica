@@ -88,7 +88,6 @@ with st.sidebar:
     c_sab = st.columns(3)
     fasce = ["Mattina", "Pomeriggio", "Notte"]
     fasce_cod = ["M", "P", "N"]
-    
     for i in range(3):
         if c_sab[i].button(f"Sabato {fasce[i]}"):
             for s in cal_data:
@@ -138,24 +137,14 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
     for d in range(1, gg_m + 1):
         dt = datetime(anno_sel, m_idx_v, d)
         nome_fest = fest.get((dt.day, dt.month))
-        
-        if nome_fest:
-            tipo = nome_fest; tipo_label = "Festivo"
-        elif dt.weekday() == 6:
-            tipo = "Domenica"; tipo_label = "Festivo"
-        elif is_prefestivo(dt, fest):
-            tipo = "Prefestivo"; tipo_label = "Prefestivo"
-        else:
-            tipo = "Feriale"; tipo_label = "Feriale"
+        tipo = nome_fest if nome_fest else ("Domenica" if dt.weekday() == 6 else ("Prefestivo" if is_prefestivo(dt, fest) else "Feriale"))
+        tipo_label = "Festivo" if (nome_fest or dt.weekday() == 6) else ("Prefestivo" if is_prefestivo(dt, fest) else "Feriale")
 
         d_str = str(d)
         h_m, h_p, h_n = "---", "---", "20:00 - 08:00"
         o_m, o_p, o_n = 0, 0, 12
-        
-        if tipo_label == "Festivo":
-            h_m, h_p = "08:00 - 14:00", "14:00 - 20:00"; o_m, o_p = 6, 6
-        elif tipo_label == "Prefestivo":
-            h_m, h_p = "10:00 - 14:00", "14:00 - 20:00"; o_m, o_p = 4, 6
+        if tipo_label == "Festivo": h_m, h_p = "08:00 - 14:00", "14:00 - 20:00"; o_m, o_p = 6, 6
+        elif tipo_label == "Prefestivo": h_m, h_p = "10:00 - 14:00", "14:00 - 20:00"; o_m, o_p = 4, 6
 
         disp_m = [m for m in st.session_state.medici if "M" not in st.session_state.assenze[m].get(d_str, [])]
         disp_p = [m for m in st.session_state.medici if "P" not in st.session_state.assenze[m].get(d_str, [])]
@@ -169,8 +158,7 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
         res.append({
             "Data": f"{d} {['LUN','MAR','MER','GIO','VEN','SAB','DOM'][dt.weekday()]}", 
             "Tipo": tipo, "Label": tipo_label, "Mattina": m_m, "Pomeriggio": p_m, "Notte": n_m, 
-            "OreM": o_m, "OreP": o_p, "OreN": o_n,
-            "H_M": h_m, "H_P": h_p, "H_N": h_n
+            "OreM": o_m, "OreP": o_p, "OreN": o_n, "H_M": h_m, "H_P": h_p, "H_N": h_n
         })
     st.session_state.db_turni = pd.DataFrame(res)
 
@@ -194,38 +182,54 @@ if not st.session_state.db_turni.empty:
     with c2:
         st.subheader("📊 Riepilogo")
         st.table(pd.DataFrame(stats_data))
-        st.markdown(f"""
-            <div class='total-box'>
-                SOMMA ORE MEDICI: {somma_ore_medici} ore<br>
-                SOMMA ORE CHE IL MESE DA: {ore_teoriche_mese} ore
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"<div class='total-box'>SOMMA ORE MEDICI: {somma_ore_medici}<br>SOMMA ORE MESE: {ore_teoriche_mese}</div>", unsafe_allow_html=True)
 
     def genera_pdf(stats_list, s_medici, s_mese):
         buf = io.BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.8*cm, bottomMargin=0.8*cm, leftMargin=0.8*cm, rightMargin=0.8*cm)
-        elements = [Paragraph(f"<b>GUARDIA MEDICA PORTO EMPEDOCLE - {mese_nome.upper()}</b>", getSampleStyleSheet()['Title'])]
+        # Ridotti i margini per far stare tutto in una pagina
+        doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.5*cm, bottomMargin=0.5*cm, leftMargin=0.5*cm, rightMargin=0.5*cm)
+        elements = []
+        
+        styles = getSampleStyleSheet()
+        title_style = styles['Title']
+        title_style.fontSize = 14 # Titolo più piccolo
+        elements.append(Paragraph(f"<b>GUARDIA MEDICA PORTO EMPEDOCLE - {mese_nome.upper()} {anno_sel}</b>", title_style))
+        elements.append(Spacer(1, 5))
+        
         data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
-        ts = [('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 8), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]
+        ts = [
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('FONTSIZE', (0,0), (-1,-1), 7), # Font molto piccolo per compattezza
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BACKGROUND', (0,0), (-1,0), colors.cadetblue),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 1), # Ridotto padding
+            ('TOPPADDING', (0,0), (-1,-1), 1),
+        ]
         
         rows = df.to_dict('records')
         for i, r in enumerate(rows):
-            data.append([r['Data'], r['Tipo'], f"{r['Mattina']}\n{r['H_M']}", f"{r['Pomeriggio']}\n{r['H_P']}", f"{r['Notte']}\n{r['H_N']}"])
+            # Formattazione riga singola per occupare meno spazio verticale
+            m_txt = f"{r['Mattina']} ({r['H_M']})" if r['Mattina'] != "---" else "---"
+            p_txt = f"{r['Pomeriggio']} ({r['H_P']})" if r['Pomeriggio'] != "---" else "---"
+            n_txt = f"{r['Notte']} (20-08)"
+            data.append([r['Data'], r['Tipo'][:12], m_txt, p_txt, n_txt])
+            
             label = r.get("Label", "")
-            if label == "Festivo": ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 0.8, 0.8)))
-            elif label == "Prefestivo": ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 1, 0.85)))
+            if label == "Festivo": ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 0.85, 0.85)))
+            elif label == "Prefestivo": ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 1, 0.9)))
         
-        t1 = Table(data, colWidths=[2.2*cm, 2*cm, 4.8*cm, 4.8*cm, 4.8*cm])
+        t1 = Table(data, colWidths=[2.2*cm, 2.5*cm, 5.1*cm, 5.1*cm, 5.1*cm], repeatRows=1)
         t1.setStyle(TableStyle(ts))
-        elements.append(t1); elements.append(Spacer(1, 10))
+        elements.append(t1)
+        elements.append(Spacer(1, 5))
         
-        elements.append(Paragraph(f"<b>RIEPILOGO ORE (Tot. Medici: {s_medici} | Tot. Mese: {s_mese})</b>", getSampleStyleSheet()['Heading3']))
-        data_s = [["MEDICO", "ORE TOTALI"]]
-        for s in stats_list: data_s.append([s['Medico'], str(s['Ore Totali'])])
-        t2 = Table(data_s, colWidths=[5*cm, 4*cm])
-        t2.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.lightgrey)]))
-        elements.append(t2)
+        # Riepilogo compatto in fondo
+        info_txt = f"<b>RIEPILOGO:</b> Somma Medici: {s_medici} ore | Somma Mese: {s_mese} ore"
+        elements.append(Paragraph(info_txt, styles['Normal']))
         
-        doc.build(elements); return buf.getvalue()
+        doc.build(elements)
+        return buf.getvalue()
 
-    st.download_button("📥 SCARICA PDF", genera_pdf(stats_data, somma_ore_medici, ore_teoriche_mese), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True)
+    st.download_button("📥 SCARICA PDF (PAGINA SINGOLA)", genera_pdf(stats_data, somma_ore_medici, ore_teoriche_mese), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True)
