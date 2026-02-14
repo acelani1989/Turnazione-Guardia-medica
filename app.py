@@ -74,9 +74,9 @@ with st.sidebar:
     m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
     
-    st.write("**Scorciatoie Feriali (Notte):**")
+    st.write("**Scorciatoie Feriali (Solo Notte):**")
     cols_f = st.columns(5)
-    for i, l in enumerate(["Lun", "Mar", "Mer", "Gio", "Ven"]):
+    for i, l in enumerate(["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"]):
         if cols_f[i].button(l):
             for s in cal_data:
                 if s[i] != 0: 
@@ -84,50 +84,30 @@ with st.sidebar:
                     st.session_state.assenze[m_sel][d_str] = list(set(st.session_state.assenze[m_sel].get(d_str, []) + ["N"]))
             st.rerun()
 
-    # NUOVA SEZIONE: Scorciatoie Weekend divise per fascia
     st.write("**Scorciatoie Sabati:**")
     c_sab = st.columns(3)
-    if c_sab[0].button("Sab M"):
-        for s in cal_data:
-            if s[5] != 0: 
-                d = str(s[5])
-                st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + ["M"]))
-        st.rerun()
-    if c_sab[1].button("Sab P"):
-        for s in cal_data:
-            if s[5] != 0: 
-                d = str(s[5])
-                st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + ["P"]))
-        st.rerun()
-    if c_sab[2].button("Sab N"):
-        for s in cal_data:
-            if s[5] != 0: 
-                d = str(s[5])
-                st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + ["N"]))
-        st.rerun()
+    fasce = ["Mattina", "Pomeriggio", "Notte"]
+    fasce_cod = ["M", "P", "N"]
+    
+    for i in range(3):
+        if c_sab[i].button(f"Sabato {fasce[i]}"):
+            for s in cal_data:
+                if s[5] != 0: 
+                    d = str(s[5])
+                    st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + [fasce_cod[i]]))
+            st.rerun()
 
     st.write("**Scorciatoie Domeniche:**")
     c_dom = st.columns(3)
-    if c_dom[0].button("Dom M"):
-        for s in cal_data:
-            if s[6] != 0: 
-                d = str(s[6])
-                st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + ["M"]))
-        st.rerun()
-    if c_dom[1].button("Dom P"):
-        for s in cal_data:
-            if s[6] != 0: 
-                d = str(s[6])
-                st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + ["P"]))
-        st.rerun()
-    if c_dom[2].button("Dom N"):
-        for s in cal_data:
-            if s[6] != 0: 
-                d = str(s[6])
-                st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + ["N"]))
-        st.rerun()
+    for i in range(3):
+        if c_dom[i].button(f"Domenica {fasce[i]}"):
+            for s in cal_data:
+                if s[6] != 0: 
+                    d = str(s[6])
+                    st.session_state.assenze[m_sel][d] = list(set(st.session_state.assenze[m_sel].get(d, []) + [fasce_cod[i]]))
+            st.rerun()
 
-    st.write("**Calendario Manuale (Tutto il giorno):**")
+    st.write("**Calendario Manuale (Intera Giornata):**")
     for week in cal_data:
         cols = st.columns(7)
         for i, day in enumerate(week):
@@ -216,10 +196,8 @@ if not st.session_state.db_turni.empty:
         st.table(pd.DataFrame(stats_data))
         st.markdown(f"""
             <div class='total-box'>
-                ORE ASSEGNATE AI MEDICI: {somma_ore_medici} ore<br>
-                <span style='font-size: 0.9rem; color: #718096;'>
-                (Capacità totale mese: {ore_teoriche_mese} ore)
-                </span>
+                SOMMA ORE MEDICI: {somma_ore_medici} ore<br>
+                SOMMA ORE CHE IL MESE DA: {ore_teoriche_mese} ore
             </div>
         """, unsafe_allow_html=True)
 
