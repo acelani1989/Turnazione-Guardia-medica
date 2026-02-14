@@ -73,8 +73,8 @@ with st.sidebar:
     
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
     
-    # Scorciatoie Feriali (Solo Notte)
-    st.write("**Feriali (Notte):**")
+    # Scorciatoie Feriali
+    st.write("**Feriali (Solo Notte):**")
     cols_fer = st.columns(5)
     g_feriali = ["LUN", "MAR", "MER", "GIO", "VEN"]
     for i, label in enumerate(g_feriali):
@@ -86,9 +86,9 @@ with st.sidebar:
                     st.session_state.assenze[m_sel][d] = list(set(curr + ["N"])) if "N" not in curr else [f for f in curr if f != "N"]
             st.rerun()
 
-    # Scorciatoie Weekend (Mattina e Pomeriggio divisi)
-    st.write("**Sabato (Mattina/Pomeriggio):**")
-    c_s1, c_s2 = st.columns(2)
+    # Scorciatoie Weekend (Mattina, Pomeriggio, Notte)
+    st.write("**Sabato (Tutte le fasce):**")
+    c_s1, c_s2, c_s3 = st.columns(3)
     if c_s1.button("SAB Matt"):
         for sett in cal_data:
             d = sett[5]
@@ -103,9 +103,16 @@ with st.sidebar:
                 curr = st.session_state.assenze[m_sel].get(d, [])
                 st.session_state.assenze[m_sel][d] = list(set(curr + ["P"])) if "P" not in curr else [f for f in curr if f != "P"]
         st.rerun()
+    if c_s3.button("SAB Notte"):
+        for sett in cal_data:
+            d = sett[5]
+            if d != 0:
+                curr = st.session_state.assenze[m_sel].get(d, [])
+                st.session_state.assenze[m_sel][d] = list(set(curr + ["N"])) if "N" not in curr else [f for f in curr if f != "N"]
+        st.rerun()
 
-    st.write("**Domenica (Mattina/Pomeriggio):**")
-    c_d1, c_d2 = st.columns(2)
+    st.write("**Domenica (Tutte le fasce):**")
+    c_d1, c_d2, c_d3 = st.columns(3)
     if c_d1.button("DOM Matt"):
         for sett in cal_data:
             d = sett[6]
@@ -120,10 +127,17 @@ with st.sidebar:
                 curr = st.session_state.assenze[m_sel].get(d, [])
                 st.session_state.assenze[m_sel][d] = list(set(curr + ["P"])) if "P" not in curr else [f for f in curr if f != "P"]
         st.rerun()
+    if c_d3.button("DOM Notte"):
+        for sett in cal_data:
+            d = sett[6]
+            if d != 0:
+                curr = st.session_state.assenze[m_sel].get(d, [])
+                st.session_state.assenze[m_sel][d] = list(set(curr + ["N"])) if "N" not in curr else [f for f in curr if f != "N"]
+        st.rerun()
 
     st.divider()
-    st.write("**Calendario Puntuale:**")
-    f_man = st.radio("Fascia:", ["N", "M", "P"], horizontal=True)
+    st.write("**Calendario Manuale:**")
+    # Qui il click sul giorno aggiunge/toglie tutto per semplicità visto che abbiamo tolto il selettore fascia
     for week in cal_data:
         cols = st.columns(7)
         for i, day in enumerate(week):
@@ -131,7 +145,8 @@ with st.sidebar:
                 curr_abs = st.session_state.assenze[m_sel].get(day, [])
                 label = f"{day}\n{''.join(curr_abs)}" if curr_abs else f"{day}"
                 if cols[i].button(label, key=f"cl_{day}", type="primary" if curr_abs else "secondary"):
-                    st.session_state.assenze[m_sel][day] = list(set(curr_abs + [f_man])) if f_man not in curr_abs else [f for f in curr_abs if f != f_man]
+                    # Se vuoto mette tutto, se pieno toglie tutto
+                    st.session_state.assenze[m_sel][day] = ["M", "P", "N"] if not curr_abs else []
                     st.rerun()
 
 # --- 5. INTERFACCIA PRINCIPALE ---
@@ -148,7 +163,7 @@ with c3:
     st.error("🚩 FESTIVI: 08-14 / 14-20 / 20-08")
     fes_m_h, fes_p_h, fes_n_h = "08:00 - 14:00", "14:00 - 20:00", "20:00 - 08:00"
 
-if st.button("🚀 GENERA TURNI DEFINITIVI", type="primary", use_container_width=True):
+if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
     gg_m = calendar.monthrange(anno_sel, m_idx_v)[1]
     res = []
@@ -159,12 +174,10 @@ if st.button("🚀 GENERA TURNI DEFINITIVI", type="primary", use_container_width
         dt = datetime(anno_sel, m_idx_v, d)
         tipo = "Festivo" if is_festivo(dt, fest) else ("Prefestivo" if is_prefestivo(dt, fest) else "Feriale")
         
-        # Filtro disponibilità
         disp_m = [m for m in st.session_state.medici if "M" not in st.session_state.assenze[m].get(d, [])]
         disp_p = [m for m in st.session_state.medici if "P" not in st.session_state.assenze[m].get(d, [])]
         disp_n = [m for m in st.session_state.medici if "N" not in st.session_state.assenze[m].get(d, [])]
 
-        # Logica Notte (Sempre presente)
         cand_n = [m for m in disp_n if m != u_n] or disp_n
         n_m = random.choice(cand_n)
         u_n = n_m
@@ -183,7 +196,7 @@ if st.button("🚀 GENERA TURNI DEFINITIVI", type="primary", use_container_width
         res.append({
             "Data": f"{d} {g_it[dt.weekday()]}", "Tipo": tipo,
             "Mattina": m_m, "Pomeriggio": p_m_v, "Notte": n_m,
-            "Ore Mattina": h_m, "Ore Pom": h_p, "Ore Notte": h_n
+            "H_M": h_m, "H_P": h_p, "H_N": h_n
         })
     st.session_state.db_turni = pd.DataFrame(res)
 
@@ -196,7 +209,7 @@ if not st.session_state.db_turni.empty:
         elements = [Paragraph(f"<b>C.A. Porto Empedocle - {mese_nome.upper()} {anno_sel}</b>", getSampleStyleSheet()['Title']), Spacer(1, 10)]
         data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
         for r in st.session_state.db_turni.to_dict('records'):
-            data.append([r['Data'], r["Tipo"], f"{r['Mattina']}\n({r['Ore Mattina']})", f"{r['Pomeriggio']}\n({r['Ore Pom']})", f"{r['Notte']}\n({r['Ore Notte']})"])
+            data.append([r['Data'], r["Tipo"], f"{r['Mattina']}\n({r['H_M']})", f"{r['Pomeriggio']}\n({r['H_P']})", f"{r['Notte']}\n({r['H_N']})"])
         
         table = Table(data, colWidths=[2.8*cm, 2.2*cm, 4.8*cm, 4.8*cm, 4.8*cm])
         table.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]))
@@ -204,4 +217,4 @@ if not st.session_state.db_turni.empty:
         doc.build(elements)
         return buf.getvalue()
 
-    st.download_button("📥 Scarica Turni PDF", genera_pdf(), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True)
+    st.download_button("📥 Scarica PDF", genera_pdf(), f"Turni_{mese_nome}.pdf", "application/pdf", use_container_width=True)
