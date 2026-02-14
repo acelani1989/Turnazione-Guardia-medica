@@ -25,7 +25,7 @@ st.markdown("""
     .main-title { color: #2c5282; font-weight: 800; font-size: 2.2rem; text-align: center; margin-bottom: 15px; }
     .settings-section { background-color: rgba(255, 255, 255, 0.95); padding: 12px; border-radius: 10px; border-left: 5px solid #4299e1; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 10px; }
     .sidebar-header { color: #2b6cb0; font-weight: 700; border-bottom: 2px solid #bee3f8; padding-bottom: 5px; margin-bottom: 10px; }
-    div[data-baseweb="select"] *, div[data-baseweb="input"] * { color: #000000 !important; font-weight: bold; }
+    .weekend-btn { background-color: #ebf8ff !important; border: 1px solid #90cdf4 !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -76,33 +76,63 @@ with st.sidebar:
     m_idx_v = mesi_ita.index(mese_nome) + 1
     
     st.divider()
-    st.markdown("<div class='sidebar-header'>📅 INDISPONIBILITÀ</div>", unsafe_allow_html=True)
-    m_sel = st.selectbox("Medico:", st.session_state.medici)
-    fascia = st.radio("Seleziona fascia di assenza:", ["Tutto il giorno", "Mattina (08-14 / 10-14)", "Pomeriggio (14-20)", "Notte (20-08)"])
+    st.markdown("<div class='sidebar-header'>📅 SCORCIATOIE INDISPONIBILITÀ</div>", unsafe_allow_html=True)
+    m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
     
-    map_fascia = {
-        "Tutto il giorno": ["M", "P", "N"],
-        "Mattina (08-14 / 10-14)": ["M"],
-        "Pomeriggio (14-20)": ["P"],
-        "Notte (20-08)": ["N"]
-    }
-
-    # Scorciatoie giorni (LUN, MAR...)
-    g_short = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
+    # --- LOGICA TASTI RAPIDI ---
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
-    cols_sh = st.columns(7)
-    for i, label in enumerate(g_short):
-        if cols_sh[i].button(label, key=f"sh_{label}"):
-            days_to_toggle = [sett[i] for sett in cal_data if sett[i] != 0]
-            for d in days_to_toggle:
-                current = st.session_state.assenze[m_sel].get(d, [])
-                if all(f in current for f in map_fascia[fascia]):
-                    st.session_state.assenze[m_sel][d] = [f for f in current if f not in map_fascia[fascia]]
-                else:
-                    st.session_state.assenze[m_sel][d] = list(set(current + map_fascia[fascia]))
+    
+    # Feriali (Lun-Ven)
+    st.write("**Giorni Feriali (Notte):**")
+    cols_fer = st.columns(5)
+    g_feriali = ["LUN", "MAR", "MER", "GIO", "VEN"]
+    for i, label in enumerate(g_feriali):
+        if cols_fer[i].button(label, key=f"sh_{label}"):
+            for sett in cal_data:
+                d = sett[i]
+                if d != 0:
+                    curr = st.session_state.assenze[m_sel].get(d, [])
+                    st.session_state.assenze[m_sel][d] = list(set(curr + ["N"])) if "N" not in curr else [f for f in curr if f != "N"]
             st.rerun()
 
-    # Calendario
+    st.write("**Fine Settimana (Divisi):**")
+    # Sabato
+    col_sab1, col_sab2 = st.columns(2)
+    if col_sab1.button("SAB Mattina", use_container_width=True):
+        for sett in cal_data:
+            d = sett[5]
+            if d != 0:
+                curr = st.session_state.assenze[m_sel].get(d, [])
+                st.session_state.assenze[m_sel][d] = list(set(curr + ["M"])) if "M" not in curr else [f for f in curr if f != "M"]
+        st.rerun()
+    if col_sab2.button("SAB Pomeriggio", use_container_width=True):
+        for sett in cal_data:
+            d = sett[5]
+            if d != 0:
+                curr = st.session_state.assenze[m_sel].get(d, [])
+                st.session_state.assenze[m_sel][d] = list(set(curr + ["P"])) if "P" not in curr else [f for f in curr if f != "P"]
+        st.rerun()
+
+    # Domenica
+    col_dom1, col_dom2 = st.columns(2)
+    if col_dom1.button("DOM Mattina", use_container_width=True):
+        for sett in cal_data:
+            d = sett[6]
+            if d != 0:
+                curr = st.session_state.assenze[m_sel].get(d, [])
+                st.session_state.assenze[m_sel][d] = list(set(curr + ["M"])) if "M" not in curr else [f for f in curr if f != "M"]
+        st.rerun()
+    if col_dom2.button("DOM Pomeriggio", use_container_width=True):
+        for sett in cal_data:
+            d = sett[6]
+            if d != 0:
+                curr = st.session_state.assenze[m_sel].get(d, [])
+                st.session_state.assenze[m_sel][d] = list(set(curr + ["P"])) if "P" not in curr else [f for f in curr if f != "P"]
+        st.rerun()
+
+    st.divider()
+    st.markdown("**Calendario Manuale:**")
+    fascia_manuale = st.radio("Se clicchi sul giorno segna:", ["M", "P", "N", "Tutto"], horizontal=True)
     for week in cal_data:
         cols = st.columns(7)
         for i, day in enumerate(week):
@@ -110,14 +140,14 @@ with st.sidebar:
                 current_abs = st.session_state.assenze[m_sel].get(day, [])
                 label = f"{day}\n{''.join(current_abs)}" if current_abs else f"{day}"
                 if cols[i].button(label, key=f"btn_{m_sel}_{day}", type="primary" if current_abs else "secondary"):
-                    if all(f in current_abs for f in map_fascia[fascia]):
-                        st.session_state.assenze[m_sel][day] = [f for f in current_abs if f not in map_fascia[fascia]]
+                    if fascia_manuale == "Tutto":
+                        st.session_state.assenze[m_sel][day] = [] if current_abs else ["M", "P", "N"]
                     else:
-                        st.session_state.assenze[m_sel][day] = list(set(current_abs + map_fascia[fascia]))
+                        st.session_state.assenze[m_sel][day] = list(set(current_abs + [fascia_manuale])) if fascia_manuale not in current_abs else [f for f in current_abs if f != fascia_manuale]
                     st.rerun()
 
     st.divider()
-    st.download_button("📥 Scarica Backup", json.dumps({"medici": st.session_state.medici, "assenze": st.session_state.assenze}), f"backup_{mese_nome}.json")
+    st.download_button("📥 Backup JSON", json.dumps({"medici": st.session_state.medici, "assenze": st.session_state.assenze}), f"backup_{mese_nome}.json")
 
 # --- 5. INTERFACCIA PRINCIPALE ---
 st.markdown(f"<div class='main-title'>C.A PORTO EMPEDOCLE: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
@@ -125,35 +155,34 @@ st.markdown(f"<div class='main-title'>C.A PORTO EMPEDOCLE: {mese_nome} {anno_sel
 c1, c2, c3 = st.columns(3)
 with c1:
     st.markdown("<div class='settings-section'><b>🏠 FERIALI</b>", unsafe_allow_html=True)
-    f_n_h = st.text_input("Notte", "20:00 - 08:00", key="f_n_main")
+    f_n_h = st.text_input("Notte", "20:00 - 08:00", key="f_n_m")
 with c2:
     st.markdown("<div class='settings-section'><b>🕒 PREFESTIVI</b>", unsafe_allow_html=True)
-    p_m_h = st.text_input("Mattina (10-14)", "10:00 - 14:00", key="p_m_main")
-    p_p_h = st.text_input("Pomeriggio (14-20)", "14:00 - 20:00", key="p_p_main")
-    p_n_h = st.text_input("Notte", "20:00 - 08:00", key="p_n_main")
+    p_m_h = st.text_input("Mattina (10-14)", "10:00 - 14:00", key="p_m_m")
+    p_p_h = st.text_input("Pomeriggio (14-20)", "14:00 - 20:00", key="p_p_m")
+    p_n_h = st.text_input("Notte", "20:00 - 08:00", key="p_n_m")
 with c3:
     st.markdown("<div class='settings-section'><b>🚩 FESTIVI</b>", unsafe_allow_html=True)
-    f_m_h = st.text_input("Mattina (08-14)", "08:00 - 14:00", key="f_m_main")
-    f_p_h = st.text_input("Pomeriggio (14-20)", "14:00 - 20:00", key="f_p_main")
-    f_n_h_fest = st.text_input("Notte", "20:00 - 08:00", key="f_n_fest_main")
+    fes_m_h = st.text_input("Mattina (08-14)", "08:00 - 14:00", key="f_m_m")
+    fes_p_h = st.text_input("Pomeriggio (14-20)", "14:00 - 20:00", key="f_p_m")
+    fes_n_h = st.text_input("Notte", "20:00 - 08:00", key="f_n_f_m")
 
 if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
     gg_m = calendar.monthrange(anno_sel, m_idx_v)[1]
     res = []
     u_n = None 
+    g_it = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
     
     for d in range(1, gg_m + 1):
         dt = datetime(anno_sel, m_idx_v, d)
         nome_f = fest.get((d, m_idx_v), "")
         tipo = "Festivo" if is_festivo(dt, fest) else ("Prefestivo" if is_prefestivo(dt, fest) else "Feriale")
         
-        # Filtro disponibilità
         disp_m = [m for m in st.session_state.medici if "M" not in st.session_state.assenze[m].get(d, [])]
         disp_p = [m for m in st.session_state.medici if "P" not in st.session_state.assenze[m].get(d, [])]
         disp_n = [m for m in st.session_state.medici if "N" not in st.session_state.assenze[m].get(d, [])]
 
-        # Scegli Notte (evita consecutive)
         cand_n = [m for m in disp_n if m != u_n] or disp_n
         n_m = random.choice(cand_n)
         u_n = n_m
@@ -161,17 +190,16 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
         m_m, p_m_v, h_m, h_p, h_n = "---", "---", "---", "---", "---"
         
         if tipo in ["Festivo", "Prefestivo"]:
-            h_m = f_m_h if tipo == "Festivo" else p_m_h
-            h_p = f_p_h if tipo == "Festivo" else p_p_h
-            h_n = f_n_h_fest if tipo == "Festivo" else p_n_h
-            # Assegnazione diurna rispettando assenze e impegno notturno
+            h_m = fes_m_h if tipo == "Festivo" else p_m_h
+            h_p = fes_p_h if tipo == "Festivo" else p_p_h
+            h_n = fes_n_h if tipo == "Festivo" else p_n_h
             m_m = random.choice([m for m in disp_m if m != n_m] or disp_m)
             p_m_v = random.choice([m for m in disp_p if m not in [n_m, m_m]] or disp_p)
         else:
             h_n = f_n_h
 
         res.append({
-            "Data": f"{d} {g_short[dt.weekday()]}", "Info": nome_f, "Tipo": tipo,
+            "Data": f"{d} {g_it[dt.weekday()]}", "Info": nome_f, "Tipo": tipo,
             "Mattina": m_m, "Pomeriggio": p_m_v, "Notte": n_m,
             "H_M": h_m, "H_P": h_p, "H_N": h_n
         })
