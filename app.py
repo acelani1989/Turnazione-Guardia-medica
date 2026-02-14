@@ -100,30 +100,64 @@ with st.sidebar:
         if c_d.button("🗑️", key=f"del_{med}"):
             st.session_state.medici.remove(med); st.rerun()
 
+    st.divider()
+    st.markdown("<div class='sidebar-header'>📅 ASSENZE</div>", unsafe_allow_html=True)
+    m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
+    
+    # Scorciatoie giorni della settimana
+    g_short = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
+    cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
+    cols_sh = st.columns(7)
+    for i, label in enumerate(g_short):
+        if cols_sh[i].button(label, key=f"sh_{label}"):
+            g_da_c = [sett[i] for sett in cal_data if sett[i] != 0]
+            curr = st.session_state.assenze.get(m_sel, [])
+            if all(d in curr for d in g_da_c):
+                st.session_state.assenze[m_sel] = [d for d in curr if d not in g_da_c]
+            else:
+                st.session_state.assenze[m_sel] = list(set(curr + g_da_c))
+            st.rerun()
+
+    # Griglia calendario
+    for week in cal_data:
+        cols = st.columns(7)
+        for i, day in enumerate(week):
+            if day != 0:
+                is_abs = day in st.session_state.assenze.get(m_sel, [])
+                if cols[i].button(str(day), key=f"d_{day}", type="primary" if is_abs else "secondary"):
+                    if is_abs: st.session_state.assenze[m_sel].remove(day)
+                    else: st.session_state.assenze[m_sel].append(day)
+                    st.rerun()
+
+    st.divider()
+    st.download_button("📥 Scarica Backup", json.dumps({"medici": st.session_state.medici, "assenze": st.session_state.assenze}), f"backup_{mese_nome}.json", use_container_width=True)
+    up = st.file_uploader("📤 Carica Backup", type="json")
+    if up:
+        data = json.load(up); st.session_state.medici, st.session_state.assenze = data["medici"], data["assenze"]; st.rerun()
+
 # --- 5. INTERFACCIA PRINCIPALE ---
 st.markdown(f"<div class='main-title'>Gestione Turni: {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
 
 c1, c2, c3 = st.columns(3)
 with c1:
     st.markdown("<div class='settings-section'><b>🏠 FERIALI</b>", unsafe_allow_html=True)
-    f_n = st.text_input("Notte", "20:00 - 08:00", key="f_n_input")
+    f_n_h = st.text_input("Notte", "20:00 - 08:00", key="f_n_in")
 with c2:
     st.markdown("<div class='settings-section'><b>🕒 PREFESTIVI</b>", unsafe_allow_html=True)
-    p_m_h = st.text_input("Mattina (10-14)", "10:00 - 14:00", key="p_m_input")
-    p_p_h = st.text_input("Pomeriggio (14-20)", "14:00 - 20:00", key="p_p_input")
-    p_n_h = st.text_input("Notte", "20:00 - 08:00", key="p_n_input")
+    p_m_h = st.text_input("Mattina (10-14)", "10:00 - 14:00", key="p_m_in")
+    p_p_h = st.text_input("Pomeriggio (14-20)", "14:00 - 20:00", key="p_p_in")
+    p_n_h = st.text_input("Notte", "20:00 - 08:00", key="p_n_in")
 with c3:
     st.markdown("<div class='settings-section'><b>🚩 FESTIVI</b>", unsafe_allow_html=True)
-    fes_m_h = st.text_input("Mattina (08-14)", "08:00 - 14:00", key="fes_m_input")
-    fes_p_h = st.text_input("Pomeriggio (14-20)", "14:00 - 20:00", key="fes_p_input")
-    fes_n_h = st.text_input("Notte", "20:00 - 08:00", key="fes_n_input")
+    fes_m_h = st.text_input("Mattina (08-14)", "08:00 - 14:00", key="f_m_in")
+    fes_p_h = st.text_input("Pomeriggio (14-20)", "14:00 - 20:00", key="f_p_in")
+    fes_n_h = st.text_input("Notte", "20:00 - 08:00", key="f_n_in_fest")
 
 if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
     gg_m = calendar.monthrange(anno_sel, m_idx_v)[1]
     res = []
     u_n = None 
-    g_short = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
     
     for d in range(1, gg_m + 1):
         dt = datetime(anno_sel, m_idx_v, d)
@@ -133,9 +167,7 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
         disp = [m for m in st.session_state.medici if d not in st.session_state.assenze.get(m, [])]
         if not disp: disp = st.session_state.medici
         
-        # Filtro per evitare notti consecutive
         cand_notte = [m for m in disp if m != u_n] or disp
-        
         m_m, p_m_v, n_m, h_m, h_p, h_n = "---", "---", "---", "---", "---", "---"
         
         if tipo == "Festivo":
@@ -150,16 +182,32 @@ if st.button("🚀 GENERA / RIGENERA TURNI", type="primary", use_container_width
             h_m, h_p, h_n = p_m_h, p_p_h, p_n_h
         else:
             n_m = random.choice(cand_notte)
-            h_n = f_n
+            h_n = f_n_h
             
         u_n = n_m
         res.append({"Data": f"{d} {g_short[dt.weekday()]}", "Info": nome_f, "Tipo": tipo, "Mattina": m_m, "Pomeriggio": p_m_v, "Notte": n_m, "H_M": h_m, "H_P": h_p, "H_N": h_n})
     
     st.session_state.db_turni = pd.DataFrame(res)
 
-# --- 6. VISUALIZZAZIONE E PDF ---
+# --- 6. RIEPILOGO E PDF ---
 if not st.session_state.db_turni.empty:
-    st.session_state.db_turni = st.data_editor(st.session_state.db_turni, use_container_width=True, hide_index=True)
+    # Calcolo ore per alert
+    ore_m = {m: 0.0 for m in st.session_state.medici}
+    for _, r in st.session_state.db_turni.iterrows():
+        if r["Mattina"] in ore_m: ore_m[r["Mattina"]] += calcola_durata(r["H_M"])
+        if r["Pomeriggio"] in ore_m: ore_m[r["Pomeriggio"]] += calcola_durata(r["H_P"])
+        if r["Notte"] in ore_m: ore_m[r["Notte"]] += calcola_durata(r["H_N"])
+
+    # Sezione Alert
+    for med, ore in ore_m.items():
+        if ore > soglia_ore: st.error(f"❌ {med} ha superato le {soglia_ore}h ({int(ore)}h)")
+
+    # Editor Tabella
+    st.session_state.db_turni = st.data_editor(st.session_state.db_turni, column_config={
+        "Mattina": st.column_config.SelectboxColumn(options=["---"] + st.session_state.medici),
+        "Pomeriggio": st.column_config.SelectboxColumn(options=["---"] + st.session_state.medici),
+        "Notte": st.column_config.SelectboxColumn(options=["---"] + st.session_state.medici),
+    }, use_container_width=True, hide_index=True)
 
     def genera_pdf():
         buf = io.BytesIO()
