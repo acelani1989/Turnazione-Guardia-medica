@@ -52,8 +52,9 @@ def is_festivo(dt, fest):
 def is_prefestivo(dt, fest): 
     return dt.weekday() == 5 or is_festivo(dt + timedelta(days=1), fest)
 
-# --- 3. SESSION STATE ---
+# --- 3. SESSION STATE (Persistenza Indisponibilità) ---
 if 'medici' not in st.session_state: st.session_state.medici = ["Piscopo", "Celani", "Lombardo", "Siracusa"]
+# Le assenze vengono caricate una sola volta all'avvio e non resettate al cambio mese
 if 'assenze' not in st.session_state: st.session_state.assenze = {m: {} for m in st.session_state.medici}
 if 'db_turni' not in st.session_state: st.session_state.db_turni = pd.DataFrame()
 
@@ -70,13 +71,14 @@ with st.sidebar:
     ore_max = st.slider("Limite ore mensili (Alert):", 120, 250, 180)
 
     st.divider()
-    st.markdown("<div class='sidebar-header'>📅 INDISPONIBILITÀ</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sidebar-header'>📅 INDISPONIBILITÀ (Ripetute ogni mese)</div>", unsafe_allow_html=True)
     m_sel = st.selectbox("Seleziona Medico:", st.session_state.medici)
     cal_data = calendar.monthcalendar(anno_sel, m_idx_v)
     
     st.write("**Scorciatoie Feriali (Solo Notte):**")
     cols_f = st.columns(5)
-    for i, l in enumerate(["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"]):
+    nomi_feriali = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"]
+    for i, l in enumerate(nomi_feriali):
         if cols_f[i].button(l):
             for s in cal_data:
                 if s[i] != 0: 
@@ -123,7 +125,7 @@ with st.sidebar:
         st.session_state.assenze[m_sel] = {}; st.rerun()
     
     backup_obj = {"assenze": st.session_state.assenze, "limite": ore_max}
-    st.download_button("💾 SCARICA BACKUP", json.dumps(backup_obj), f"backup_{mese_nome}.json", use_container_width=True)
+    st.download_button("💾 SCARICA BACKUP", json.dumps(backup_obj), f"backup_impostazioni.json", use_container_width=True)
 
 # --- 5. LOGICA GENERAZIONE ---
 st.markdown(f"<div class='main-title'>C.A. Porto Empedocle - {mese_nome} {anno_sel}</div>", unsafe_allow_html=True)
@@ -146,6 +148,7 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
         if tipo_label == "Festivo": h_m, h_p = "08:00 - 14:00", "14:00 - 20:00"; o_m, o_p = 6, 6
         elif tipo_label == "Prefestivo": h_m, h_p = "10:00 - 14:00", "14:00 - 20:00"; o_m, o_p = 4, 6
 
+        # Controllo disponibilità persistente
         disp_m = [m for m in st.session_state.medici if "M" not in st.session_state.assenze[m].get(d_str, [])]
         disp_p = [m for m in st.session_state.medici if "P" not in st.session_state.assenze[m].get(d_str, [])]
         disp_n = [m for m in st.session_state.medici if "N" not in st.session_state.assenze[m].get(d_str, [])]
@@ -164,12 +167,10 @@ if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True):
 
 # --- 6. VISUALIZZAZIONE E EDITING ---
 if not st.session_state.db_turni.empty:
-    # Qui abilitiamo la selezione manuale dei medici tramite data_editor
     c1, c2 = st.columns([2, 1])
     
     with c1:
-        st.subheader("📅 Turni (Modificabili)")
-        # Configuriamo le colonne come menu a tendina
+        st.subheader("📅 Turni (Modificabili con Selezione Medico)")
         lista_medici_tendina = st.session_state.medici + ["---"]
         edited_df = st.data_editor(
             st.session_state.db_turni,
@@ -181,11 +182,8 @@ if not st.session_state.db_turni.empty:
                 "Data": st.column_config.TextColumn("Data", disabled=True),
                 "Tipo": st.column_config.TextColumn("Tipo", disabled=True),
             },
-            use_container_width=True,
-            hide_index=True,
-            key="editor_turni"
+            use_container_width=True, hide_index=True, key="editor_turni"
         )
-        # Aggiorniamo il db in session state con le modifiche manuali
         st.session_state.db_turni = edited_df
 
     with c2:
@@ -206,9 +204,9 @@ if not st.session_state.db_turni.empty:
                 st.markdown(f"<div class='alert-box'>⚠️ <b>{m}</b>: {totale} ore</div>", unsafe_allow_html=True)
 
         st.table(pd.DataFrame(stats_data))
-        st.markdown(f"<div class='total-box'>SOMMA ORE MEDICI: {somma_ore_medici}<br>SOMMA ORE MESE: {ore_teoriche_mese}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='total-box'>SOMMA ORE MEDICI: {somma_ore_medici}<br>SOMMA ORE CHE IL MESE DA: {ore_teoriche_mese}</div>", unsafe_allow_html=True)
 
-    # --- 7. PDF GENERATION ---
+    # --- 7. PDF GENERATION (Pagina Singola con Tabella Riepilogo) ---
     def genera_pdf(stats_list, s_medici, s_mese):
         buf = io.BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.4*cm, bottomMargin=0.4*cm, leftMargin=0.4*cm, rightMargin=0.4*cm)
