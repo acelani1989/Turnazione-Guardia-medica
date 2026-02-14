@@ -166,9 +166,7 @@ if not st.session_state.db_turni.empty:
     stats_data = []
     df = st.session_state.db_turni
     
-    # Calcolo Somma Ore Assegnate ai Medici
     somma_ore_medici = 0
-    # Calcolo Somma Ore Totali che il mese genera (Teoriche)
     ore_teoriche_mese = df['OreM'].sum() + df['OreP'].sum() + df['OreN'].sum()
 
     for m in st.session_state.medici:
@@ -201,10 +199,16 @@ if not st.session_state.db_turni.empty:
         data = [["DATA", "TIPO", "MATTINA", "POMERIGGIO", "NOTTE"]]
         ts = [('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 8), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.cadetblue), ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]
         
-        for i, r in enumerate(df.to_dict('records')):
+        # Trasformiamo il dataframe in una lista di dizionari per iterare in sicurezza
+        rows = df.to_dict('records')
+        for i, r in enumerate(rows):
             data.append([r['Data'], r['Tipo'], f"{r['Mattina']}\n{r['H_M']}", f"{r['Pomeriggio']}\n{r['H_P']}", f"{r['Notte']}\n{r['H_N']}"])
-            if r["Label"] == "Festivo": ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 0.8, 0.8)))
-            elif r["Label"] == "Prefestivo": ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 1, 0.85)))
+            # Controllo sicuro sulla chiave 'Label'
+            label = r.get("Label", "")
+            if label == "Festivo": 
+                ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 0.8, 0.8)))
+            elif label == "Prefestivo": 
+                ts.append(('BACKGROUND', (0, i+1), (-1, i+1), colors.Color(1, 1, 0.85)))
         
         t1 = Table(data, colWidths=[2.2*cm, 2*cm, 4.8*cm, 4.8*cm, 4.8*cm])
         t1.setStyle(TableStyle(ts))
