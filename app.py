@@ -73,38 +73,51 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
             "GIORNO": f"{prefix}{d} {ita_g[wd]} {f_n}",
             "P 10-14": ass if is_p else "", "P 14-20": ass if is_p else "",
             "F 08-14": ass if is_f else "", "F 14-20": ass if is_f else "",
-            "NOTT 20-08": ass, "hM": 4 if is_p else (6 if is_f else 0),
-            "hP": 6 if (is_p or is_f) else 0, "hN": 12
+            "NOTT 20-08": ass, 
+            "hM": float(4 if is_p else (6 if is_f else 0)),
+            "hP": float(6 if (is_p or is_f) else 0), 
+            "hN": float(12)
         })
-    # PULIZIA IMMEDIATA: sostituisce i None con striscia vuota (stringa "")
-    st.session_state.db = pd.DataFrame(rows).replace([None, "None", "nan", "0", 0], "")
+    st.session_state.db = pd.DataFrame(rows)
 
 if st.session_state.db is not None:
-    # Editor della tabella (Data Editor)
-    config = {k: st.column_config.SelectboxColumn(k, options=[""] + medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
-    df_ed = st.data_editor(st.session_state.db, 
-                           column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
-                           column_config=config, hide_index=True, use_container_width=True).fillna("")
+    # --- PULIZIA SOLO VISIVA PER L'EDITOR ---
+    # Creiamo una copia per l'editor che non rovini i calcoli numerici
+    df_visuale = st.session_state.db.copy()
+    for col in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
+        df_visuale[col] = df_visuale[col].apply(lambda x: "" if str(x).lower() in ["none", "nan", "0"] else x)
 
-    # Calcolo Ore
+    config = {k: st.column_config.SelectboxColumn(k, options=[""] + medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
+    
+    # L'editor restituisce i dati modificati
+    df_ed = st.data_editor(df_visuale, 
+                           column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
+                           column_config=config, hide_index=True, use_container_width=True)
+
+    # --- CALCOLO ORE (SICURO) ---
     riepilogo = []
     for m in medici_attuali:
-        if not m: continue
-        ore = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + df_ed[df_ed["F 08-14"]==m]["hM"].sum() + \
-              df_ed[df_ed["P 14-20"]==m]["hP"].sum() + df_ed[df_ed["F 14-20"]==m]["hP"].sum() + \
+        if not m or m == "": continue
+        # Sommiamo le ore solo se il medico m è presente nelle colonne corrispondenti
+        ore = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + \
+              df_ed[df_ed["F 08-14"]==m]["hM"].sum() + \
+              df_ed[df_ed["P 14-20"]==m]["hP"].sum() + \
+              df_ed[df_ed["F 14-20"]==m]["hP"].sum() + \
               df_ed[df_ed["NOTT 20-08"]==m]["hN"].sum()
         riepilogo.append({"Medico": m, "Ore Totali": int(ore)})
-    df_ore = pd.DataFrame(riepilogo); totale_m = df_ore['Ore Totali'].sum() if not df_ore.empty else 0
+    
+    df_ore = pd.DataFrame(riepilogo)
+    totale_m = df_ore['Ore Totali'].sum() if not df_ore.empty else 0
 
     with placeholder_sidebar:
         st.subheader("📊 Ore Medici")
         for _, r in df_ore.iterrows(): st.write(f"**{r['Medico']}**: {r['Ore Totali']} h")
         st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:22px;font-weight:bold;margin:0;">{totale_m} h</p></div>', unsafe_allow_html=True)
 
+    # --- SEZIONE PDF (CON STRISCIA BIANCA) ---
     st.write("---")
     col1, col2 = st.columns(2)
     
-    # --- LOGICA PDF (STRISCIA BIANCA COPRENTE) ---
     pdf = FPDF('P', 'mm', 'A4'); pdf.set_margins(8, 8, 8); pdf.add_page()
     pdf.set_font("Arial", 'B', 10); pdf.cell(0, 6, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", 0, 1, 'C'); pdf.ln(2)
     w_g, w_c = 38, 31; pdf.set_font("Arial", 'B', 7)
@@ -114,18 +127,13 @@ if st.session_state.db is not None:
 
     pdf.set_font("Arial", '', 6.5)
     for _, r in df_ed.iterrows():
-        # Colore di riempimento della cella (Grigio per i festivi con *, Bianco per il resto)
-        fill_color = (235, 235, 235) if "*" in str(r["GIORNO"]) else (255, 255, 255)
-        pdf.set_fill_color(*fill_color)
-        
+        bg_color = (235, 235, 235) if "*" in str(r["GIORNO"]) else (255, 255, 255)
+        pdf.set_fill_color(*bg_color)
         pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
         for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
             val = str(r[k]).strip()
-            # Se il valore è fastidioso (None/nan/0), lo "sbianchiamo"
-            if val.lower() in ["none", "nan", "", "0", "0.0"]:
-                val = ""
-            
-            # fill=True disegna la striscia di colore coprente
+            # Striscia bianca/pulizia per il PDF
+            if val.lower() in ["none", "nan", "", "0", "0.0"]: val = ""
             pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
         pdf.ln()
 
