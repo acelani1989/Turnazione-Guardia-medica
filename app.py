@@ -51,7 +51,6 @@ with st.sidebar:
     st.write("---")
     placeholder_sidebar = st.container()
 
-# PULSANTE GENERAZIONE SCHEMA
 if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
     gg = calendar.monthrange(anno_sel, idx_m)[1]
@@ -80,74 +79,63 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
 
 if st.session_state.db is not None:
     config = {k: st.column_config.SelectboxColumn(k, options=[""] + medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
-    
     df_ed = st.data_editor(st.session_state.db, 
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
                            column_config=config, hide_index=True, use_container_width=True)
 
-    # --- NUOVA LOGICA CALCOLO ORE (SICURA AL 100%) ---
     riepilogo = []
     for m in medici_attuali:
         if not m or m == "": continue
-        
-        # Ore Mattina (P 10-14 = 4h / F 08-14 = 6h)
         ore_m = (df_ed[(df_ed["P 10-14"] == m) & (df_ed["TIPO"] == "PREF")].shape[0] * 4) + \
                 (df_ed[(df_ed["F 08-14"] == m) & (df_ed["TIPO"] == "FEST")].shape[0] * 6)
-        
-        # Ore Pomeriggio (P 14-20 o F 14-20 = sempre 6h)
-        ore_p = (df_ed[df_ed["P 14-20"] == m].shape[0] * 6) + \
-                (df_ed[df_ed["F 14-20"] == m].shape[0] * 6)
-        
-        # Ore Notte (20-08 = sempre 12h)
+        ore_p = (df_ed[df_ed["P 14-20"] == m].shape[0] * 6) + (df_ed[df_ed["F 14-20"] == m].shape[0] * 6)
         ore_n = df_ed[df_ed["NOTT 20-08"] == m].shape[0] * 12
-        
-        tot = ore_m + ore_p + ore_n
-        riepilogo.append({"Medico": m, "Ore Totali": int(tot)})
-    
-    df_ore = pd.DataFrame(riepilogo)
-    totale_m = df_ore['Ore Totali'].sum() if not df_ore.empty else 0
+        riepilogo.append({"Medico": m, "Ore Totali": int(ore_m + ore_p + ore_n)})
+    df_ore = pd.DataFrame(riepilogo); totale_m = df_ore['Ore Totali'].sum() if not df_ore.empty else 0
 
     with placeholder_sidebar:
         st.subheader("📊 Ore Medici")
         for _, r in df_ore.iterrows(): st.write(f"**{r['Medico']}**: {r['Ore Totali']} h")
         st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:22px;font-weight:bold;margin:0;">{totale_m} h</p></div>', unsafe_allow_html=True)
 
-    # --- SEZIONE PDF ---
     st.write("---")
     col1, col2 = st.columns(2)
     
-    pdf = FPDF('P', 'mm', 'A4'); pdf.set_margins(8, 8, 8); pdf.add_page()
+    # --- LOGICA PDF CON COLONNE STRETTE ---
+    pdf = FPDF('P', 'mm', 'A4'); pdf.set_margins(10, 10, 10); pdf.add_page()
     pdf.set_font("Arial", 'B', 10); pdf.cell(0, 6, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", 0, 1, 'C'); pdf.ln(2)
-    w_g, w_c = 38, 31; pdf.set_font("Arial", 'B', 7)
+    
+    # Nuove larghezze: Totale = 190mm circa (A4 con margini)
+    w_g = 30  # Giorno più stretto
+    w_c = 32  # Colonne turni regolate
+    
+    pdf.set_font("Arial", 'B', 7)
     h_pdf = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
-    for i, head in enumerate(h_pdf): pdf.cell(w_g if i==0 else w_c, 6, head, 1, 0, 'C')
+    for i, head in enumerate(h_pdf):
+        pdf.cell(w_g if i==0 else w_c, 6, head, 1, 0, 'C')
     pdf.ln()
 
-    pdf.set_font("Arial", '', 6.5)
+    pdf.set_font("Arial", '', 6) # Carattere leggermente più piccolo
     for _, r in df_ed.iterrows():
         bg_color = (235, 235, 235) if "*" in str(r["GIORNO"]) else (255, 255, 255)
         pdf.set_fill_color(*bg_color)
-        pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
+        pdf.cell(w_g, 5, str(r["GIORNO"]), 1, 0, 'L', True)
         for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
             val = str(r[k]).strip()
-            # Striscia bianca/pulizia per il PDF
-            if val.lower() in ["none", "nan", "", "0", "0.0"]: val = ""
-            pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
+            if val.lower() in ["none", "nan", "", "0"]: val = ""
+            pdf.cell(w_c, 5, val, 1, 0, 'C', True)
         pdf.ln()
 
-    pdf.ln(3); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
+    pdf.ln(4); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
     for _, ro in df_ore.iterrows():
-        pdf.set_font("Arial", 'B', 7); pdf.cell(50, 7, str(ro["Medico"]), 1, 0, 'C')
-        pdf.cell(30, 7, f"{ro['Ore Totali']} h", 1, 0, 'C'); pdf.cell(60, 7, " Firma: ________________", 1, 1, 'L')
-    pdf.set_font("Arial", 'B', 8); pdf.cell(50, 7, "TOTALE MENSILE", 1, 0, 'C')
-    pdf.cell(30, 7, f"{totale_m} h", 1, 0, 'C'); pdf.cell(60, 7, "", 1, 1, 'C')
+        pdf.set_font("Arial", 'B', 7); pdf.cell(40, 7, str(ro["Medico"]), 1, 0, 'C')
+        pdf.cell(25, 7, f"{ro['Ore Totali']} h", 1, 0, 'C'); pdf.cell(60, 7, " Firma: ________________", 1, 1, 'L')
     
     pdf_output = pdf.output(dest='S').encode('latin-1')
 
     with col1:
         if st.button("👁️ MOSTRA ANTEPRIMA PDF", use_container_width=True):
             pdf_b64 = base64.b64encode(pdf_output).decode('utf-8')
-            pdf_display = f'<object data="data:application/pdf;base64,{pdf_b64}" type="application/pdf" width="100%" height="800px"></object>'
-            st.markdown(pdf_display, unsafe_allow_html=True)
+            st.markdown(f'<object data="data:application/pdf;base64,{pdf_b64}" type="application/pdf" width="100%" height="800px"></object>', unsafe_allow_html=True)
     with col2:
         st.download_button("💾 SALVA PDF SUL PC", pdf_output, f"Turni_{mese_sel}.pdf", "application/pdf", use_container_width=True)
