@@ -26,7 +26,7 @@ def get_festivita(anno):
     p = pasqua(anno); pp = p + timedelta(days=1)
     return {(1,1):"Capod.",(6,1):"Epif.",(25,2):"Patr.",(25,4):"Lib.",(1,5):"Lav.",(2,6):"Rep.",(15,8):"Ferr.",(1,11):"Ognis.",(8,12):"Immac.",(25,12):"Nat.",(26,12):"Stef.",(p.day,p.month):"Pasqua",(pp.day,pp.month):"Pasqu."}
 
-st.set_page_config(page_title="Gestione Turni", layout="wide")
+st.set_page_config(page_title="Turni con Simboli", layout="wide")
 st.markdown("### PRESIDIO DI CONTINUITA’ ASSISTENZIALE PORTO EMPEDOCLE")
 
 medici = ["Piscopo", "Celani", "Lombardo", "Siracusa"]
@@ -48,7 +48,12 @@ if st.button("🚀 GENERA SCHEMA", type="primary", use_container_width=True):
         f_n = fest.get((d, idx_m), "")
         is_f = wd == 6 or f_n != ""
         is_p = wd == 5 or (not is_f and ((dt + timedelta(days=1)).weekday() == 6 or ((dt + timedelta(days=1)).day, (dt + timedelta(days=1)).month) in fest))
-        rows.append({"GIORNO": f"{d} {ita_g[wd]} {f_n}", "P 10-14": "", "P 14-20": "", "F 08-14": "", "F 14-20": "", "NOTT 20-08": "", 
+        
+        # Simboli per B/N
+        simbolo = "** " if is_f else ("* " if is_p else "")
+        label_giorno = f"{simbolo}{d} {ita_g[wd]} {f_n}"
+        
+        rows.append({"GIORNO": label_giorno, "P 10-14": "", "P 14-20": "", "F 08-14": "", "F 14-20": "", "NOTT 20-08": "", 
                      "hM": 4 if is_p else (6 if is_f else 0), "hP": 6 if (is_p or is_f) else 0, "hN": 12, "TIPO": "F" if is_f else ("P" if is_p else "N")})
     st.session_state.db = pd.DataFrame(rows)
 
@@ -69,11 +74,18 @@ if 'db' in st.session_state:
         buf_ex = io.BytesIO()
         with pd.ExcelWriter(buf_ex, engine='xlsxwriter') as writer:
             df_ed.drop(columns=["hM","hP","hN","TIPO"]).to_excel(writer, index=False, sheet_name='Turni')
-            df_ore.to_excel(writer, index=False, sheet_name='Conteggio Ore')
-        st.download_button("📥 EXCEL", buf_ex.getvalue(), f"Turni_{mese_sel}.xlsx", use_container_width=True)
+            df_ore.to_excel(writer, index=False, sheet_name='Ore')
+            wb = writer.book
+            ws = writer.sheets['Turni']
+            fmt_f = wb.add_format({'bg_color': '#D3D3D3'})
+            fmt_p = wb.add_format({'bg_color': '#F2F2F2'})
+            for i, t in enumerate(df_ed["TIPO"]):
+                if t == "F": ws.set_row(i+1, None, fmt_f)
+                elif t == "P": ws.set_row(i+1, None, fmt_p)
+        st.download_button("📥 EXCEL B/N", buf_ex.getvalue(), "Turni.xlsx", use_container_width=True)
 
     with c2:
-        if pdf_ok and st.button("📄 GENERA PDF", use_container_width=True):
+        if pdf_ok and st.button("📄 GENERA PDF B/N", use_container_width=True):
             pdf = FPDF('P', 'mm', 'A4')
             pdf.set_margins(7, 7, 7)
             pdf.add_page()
@@ -82,7 +94,6 @@ if 'db' in st.session_state:
             pdf.cell(0, 6, f"{mese_sel} {anno_sel}", 0, 1, 'C')
             pdf.ln(2)
             
-            # Tabella Turni
             w_g, w_c = 36, 32
             pdf.set_font("Arial", 'B', 7)
             h = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
@@ -91,20 +102,22 @@ if 'db' in st.session_state:
             
             pdf.set_font("Arial", '', 6.5)
             for _, r in df_ed.iterrows():
-                # Colorazione
-                pdf.set_fill_color(255,199,206) if r["TIPO"]=="F" else pdf.set_fill_color(255,235,156) if r["TIPO"]=="P" else pdf.set_fill_color(255,255,255)
+                if r["TIPO"] == "F": pdf.set_fill_color(210, 210, 210)
+                elif r["TIPO"] == "P": pdf.set_fill_color(240, 240, 240)
+                else: pdf.set_fill_color(255, 255, 255)
                 
-                # Cella GIORNO
                 pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
-                
-                # Celle MEDICI (Sostituisce None con "")
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-                    valore = str(r[k]) if r[k] and str(r[k]).lower() != "none" else ""
-                    pdf.cell(w_c, 5.2, valore, 1, 0, 'C', True)
+                    val = str(r[k]) if r[k] and str(r[k]).lower() != "none" else ""
+                    pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
                 pdf.ln()
             
-            # Tabella Ore (Nello stesso foglio)
-            pdf.ln(3)
+            # Legenda e Riepilogo
+            pdf.ln(2)
+            pdf.set_font("Arial", 'I', 6)
+            pdf.cell(0, 4, "* Prefestivo | ** Festivo", 0, 1, 'L')
+            
+            pdf.ln(2)
             pdf.set_font("Arial", 'B', 8)
             pdf.cell(0, 6, "RIEPILOGO ORE TOTALI PER MEDICO", 0, 1, 'L')
             pdf.set_font("Arial", 'B', 7)
@@ -115,4 +128,4 @@ if 'db' in st.session_state:
                 pdf.cell(50, 5, str(row_o["Medico"]), 1, 0, 'C')
                 pdf.cell(30, 5, str(row_o["Ore Totali"]), 1, 1, 'C')
             
-            st.download_button("💾 SALVA PDF", pdf.output(dest='S').encode('latin-1'), "Turni.pdf", "application/pdf", use_container_width=True)
+            st.download_button("💾 SALVA PDF B/N", pdf.output(dest='S').encode('latin-1'), "Turni_BN.pdf", "application/pdf", use_container_width=True)
