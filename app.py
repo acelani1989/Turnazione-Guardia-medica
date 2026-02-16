@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
 import calendar
+import json
 from datetime import datetime, timedelta
 
-# --- 1. LOGICA FESTIVITÀ E CALENDARIO ---
+# --- 1. LOGICA CALENDARIO E FESTIVITÀ ---
 def get_festivita(anno):
-    """Dizionario festività nazionali + Santo Patrono."""
+    """Calcola le festività nazionali italiane e il Santo Patrono."""
     def calcola_pasqua(y):
         a, b, c = y % 19, y // 100, y % 100
         d, e = b // 4, b % 4
@@ -22,45 +23,53 @@ def get_festivita(anno):
     p = calcola_pasqua(anno)
     pp = p + timedelta(days=1)
     
-    fest = {
+    return {
         (1, 1): "Capodanno", (6, 1): "Epifania", 
-        (25, 2): "S. Patrono", # <--- Aggiunto Santo Patrono
+        (25, 2): "S. Patrono", 
         (25, 4): "Liberazione", (1, 5): "Festa Lavoro", (2, 6): "Festa Repubblica", 
         (15, 8): "Ferragosto", (1, 11): "Ognissanti", (8, 12): "Immacolata", 
         (25, 12): "Natale", (26, 12): "S. Stefano", 
         (p.day, p.month): "Pasqua", (pp.day, pp.month): "Pasquetta"
     }
-    return fest
 
 def is_festivo(dt, fest):
-    """Verifica se è domenica o una data nel dizionario festività."""
     return dt.weekday() == 6 or (dt.day, dt.month) in fest
 
 def is_prefestivo(dt, fest):
-    """Verifica se è sabato o se il giorno successivo è festivo."""
     domani = dt + timedelta(days=1)
     return dt.weekday() == 5 or is_festivo(domani, fest)
 
+def get_giorno_ita(dt):
+    giorni = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
+    return giorni[dt.weekday()]
+
 # --- 2. CONFIGURAZIONE UI ---
-st.set_page_config(page_title="Turni Guardia Medica Universale", layout="wide")
+st.set_page_config(page_title="Turni Guardia Medica", layout="wide")
 
 if 'db_turni' not in st.session_state:
     st.session_state.db_turni = pd.DataFrame()
 if 'medici' not in st.session_state:
     st.session_state.medici = ["Piscopo", "Celani", "Lombardo", "Siracusa"]
 
+# --- 3. SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Impostazioni")
     anno_sel = st.number_input("Anno", min_value=2020, max_value=2035, value=2026)
     mesi_ita = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", 
                 "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
-    mese_nome = st.selectbox("Mese", mesi_ita, index=1) # Default su Febbraio
+    mese_nome = st.selectbox("Mese", mesi_ita, index=2) # Default Marzo
     mese_idx = mesi_ita.index(mese_nome) + 1
 
-# --- 3. GENERAZIONE TURNI ---
-st.title(f"Pianificazione Turni - {mese_nome} {anno_sel}")
+    st.divider()
+    st.write("**Legenda Orari:**")
+    st.write("- **Festivo:** 08-14 / 14-20 / 20-08")
+    st.write("- **Prefestivo:** 10-14 / 14-20 / 20-08")
+    st.write("- **Feriale:** 20-08")
 
-if st.button("🔄 Genera / Reset Tabella", type="primary"):
+# --- 4. GENERAZIONE TURNI ---
+st.title(f"Pianificazione Turni: {mese_nome} {anno_sel}")
+
+if st.button("🚀 Genera Nuova Tabella Mensile", type="primary"):
     fest = get_festivita(anno_sel)
     gg_mese = calendar.monthrange(anno_sel, mese_idx)[1]
     rows = []
@@ -71,6 +80,7 @@ if st.button("🔄 Genera / Reset Tabella", type="primary"):
         fest_label = fest.get((d, mese_idx))
         festivo = is_festivo(dt, fest)
         prefestivo = is_prefestivo(dt, fest)
+        nome_giorno = get_giorno_ita(dt)
         
         if festivo:
             tipo = f"FESTIVO ({fest_label})" if fest_label else "DOMENICA"
@@ -86,40 +96,44 @@ if st.button("🔄 Genera / Reset Tabella", type="primary"):
             m, p = "---", "---"
 
         rows.append({
-            "Data": dt.strftime("%d/%m (%a)"),
+            "Giorno": d,
+            "Data": f"{d} {nome_giorno}",
             "Tipo": tipo,
             "Mattina": m,
             "Pomeriggio": p,
             "Notte": "Libero",
-            "OreM": o_m, "OreP": o_p, "OreN": 12,
-            "H_M": h_m, "H_P": h_p
+            "OreM": o_m, "OreP": o_p, "OreN": 12
         })
     
     st.session_state.db_turni = pd.DataFrame(rows)
 
-# --- 4. DISPLAY E EDITING ---
+# --- 5. VISUALIZZAZIONE E EDITING ---
 if not st.session_state.db_turni.empty:
     lista_m = st.session_state.medici + ["---", "SOSTITUTO"]
     
+    # Editor della tabella
     edited_df = st.data_editor(
         st.session_state.db_turni,
         column_order=("Data", "Tipo", "Mattina", "Pomeriggio", "Notte"),
         column_config={
-            "Mattina": st.column_config.SelectboxColumn("Mattina", options=lista_m),
-            "Pomeriggio": st.column_config.SelectboxColumn("Pomeriggio", options=lista_m),
-            "Notte": st.column_config.SelectboxColumn("Notte (20-08)", options=lista_m),
+            "Data": st.column_config.TextColumn("Data e Giorno", width="medium", disabled=True),
+            "Tipo": st.column_config.TextColumn("Stato Giorno", width="small", disabled=True),
+            "Mattina": st.column_config.SelectboxColumn("Mattina (Diurna)", options=lista_m),
+            "Pomeriggio": st.column_config.SelectboxColumn("Pomeriggio (Diurna)", options=lista_m),
+            "Notte": st.column_config.SelectboxColumn("Notte (20:00-08:00)", options=lista_m),
         },
         use_container_width=True,
         hide_index=True
     )
 
     # Riepilogo Ore
-    st.subheader("📊 Totale Ore Mensili")
+    st.divider()
+    st.subheader("📊 Calcolo Ore Totali del Mese")
     stats = []
     for med in st.session_state.medici:
         o_m = edited_df[edited_df["Mattina"] == med]["OreM"].sum()
         o_p = edited_df[edited_df["Pomeriggio"] == med]["OreP"].sum()
         o_n = edited_df[edited_df["Notte"] == med]["OreN"].sum()
-        stats.append({"Medico": med, "Ore": int(o_m + o_p + o_n)})
+        stats.append({"Medico": med, "Ore Totali": int(o_m + o_p + o_n)})
     
     st.table(pd.DataFrame(stats))
