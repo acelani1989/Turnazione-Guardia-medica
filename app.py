@@ -70,7 +70,9 @@ with st.sidebar:
     if st.session_state.db is not None:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            st.session_state.db.to_excel(writer, sheet_name='Turni', index=False)
+            # Pulizia None prima dell'export
+            df_export = st.session_state.db.fillna("")
+            df_export.to_excel(writer, sheet_name='Turni', index=False)
             pd.DataFrame({"ListaMedici": st.session_state.medici_lista}).to_excel(writer, sheet_name='Anagrafica', index=False)
         
         st.download_button(label="📤 SCARICA BACKUP", data=buffer.getvalue(), 
@@ -125,15 +127,16 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
             "NOTT 20-08": ass_notte,
             "TIPO": "FEST" if is_f else ("PREF" if is_p else "FER")
         })
-    st.session_state.db = pd.DataFrame(rows)
+    st.session_state.db = pd.DataFrame(rows).fillna("")
 
 # --- 5. EDITOR E CALCOLO ORE ---
 if st.session_state.db is not None:
-    # Sostituiamo ogni valore nullo con stringa vuota prima dell'editor
+    # Sostituiamo ogni valore nullo con stringa vuota
     st.session_state.db = st.session_state.db.fillna("")
     
     config = {k: st.column_config.SelectboxColumn(k, options=[""] + st.session_state.medici_lista) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
-    df_ed = st.data_editor(st.session_state.db, column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
+    df_ed = st.data_editor(st.session_state.db, 
+                           column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
                            column_config=config, hide_index=True, use_container_width=True)
     st.session_state.db = df_ed
 
@@ -154,7 +157,7 @@ if st.session_state.db is not None:
         for _, r in df_ore.iterrows(): st.write(f"**{r['Medico']}**: {r['Ore']} h")
         st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:22px;font-weight:bold;margin:0;">{tot_mensile} h</p></div>', unsafe_allow_html=True)
 
-    # --- 6. PDF GENERATION (CORRETTA PER FPDF2) ---
+    # --- 6. PDF GENERATION (CORRETTA PER FPDF2 E STREAMLIT) ---
     st.write("---")
     col1, col2 = st.columns(2)
     
@@ -196,12 +199,18 @@ if st.session_state.db is not None:
     pdf.cell(25, 7, f"{tot_mensile} h", border=1, align='C', fill=True)
     pdf.cell(65, 7, "", border=1, fill=True)
 
-    # Correzione AttributeError: pdf.output() restituisce i byte in fpdf2
-    pdf_bytes = pdf.output()
+    # TRASFORMAZIONE OUTPUT IN BYTES (Risolve AttributeError e StreamlitAPIException)
+    pdf_output = bytes(pdf.output())
     
     with col1:
         if st.button("👁️ ANTEPRIMA PDF", use_container_width=True):
-            b64 = base64.b64encode(pdf_bytes).decode('utf-8')
+            b64 = base64.b64encode(pdf_output).decode('utf-8')
             st.markdown(f'<object data="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="800px"></object>', unsafe_allow_html=True)
     with col2:
-        st.download_button("💾 SCARICA PDF", pdf_bytes, f"Turni_{mese_sel}.pdf", "application/pdf", use_container_width=True)
+        st.download_button(
+            label="💾 SCARICA PDF", 
+            data=pdf_output, 
+            file_name=f"Turni_{mese_sel}.pdf", 
+            mime="application/pdf", 
+            use_container_width=True
+        )
