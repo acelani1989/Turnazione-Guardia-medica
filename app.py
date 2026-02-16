@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import calendar
 import io
+import base64
 from datetime import datetime, timedelta
 
 try:
@@ -29,6 +30,9 @@ def get_festivita(anno):
 st.set_page_config(page_title="Turni PCA Porto Empedocle", layout="wide")
 st.markdown("### PRESIDIO DI CONTINUITA’ ASSISTENZIALE PORTO EMPEDOCLE")
 
+if 'db' not in st.session_state:
+    st.session_state.db = None
+
 with st.sidebar:
     st.header("⚙️ CONFIGURAZIONE")
     medici_base = ["Celani", "Piscopo", "Lombardo", "Siracusa"]
@@ -42,76 +46,61 @@ with st.sidebar:
     st.subheader("📊 Riepilogo Ore")
     placeholder_sidebar = st.container()
 
-# Generazione dati automatica
-fest = get_festivita(anno_sel)
-gg = calendar.monthrange(anno_sel, idx_m)[1]
-rows = []
-ita_g = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]; v_c = 0
+# PULSANTE GENERA TURNI
+if st.button("🚀 GENERA / RESETTA TURNI", type="primary", use_container_width=True):
+    fest = get_festivita(anno_sel)
+    gg = calendar.monthrange(anno_sel, idx_m)[1]
+    rows = []
+    ita_g = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]; v_c = 0
+    for d in range(1, gg + 1):
+        dt = datetime(anno_sel, idx_m, d); wd = dt.weekday()
+        f_n = fest.get((d, idx_m), ""); is_f = wd == 6 or f_n != ""
+        is_p = wd == 5 or (not is_f and ((dt + timedelta(days=1)).weekday() == 6 or ((dt + timedelta(days=1)).day, (dt + timedelta(days=1)).month) in fest))
+        ass = ""
+        if wd in [0, 2]: ass = "Celani"
+        elif wd == 1: ass = "Piscopo"
+        elif wd == 3: ass = "Lombardo"
+        elif wd == 4: v_c += 1; ass = "Celani" if v_c % 2 != 0 else "Piscopo"
+        elif wd in [5, 6]: ass = "Siracusa"
+        
+        prefix = "** " if is_f else ("* " if is_p else "")
+        rows.append({
+            "GIORNO": f"{prefix}{d} {ita_g[wd]} {f_n}",
+            "P 10-14": ass if is_p else "", "P 14-20": ass if is_p else "",
+            "F 08-14": ass if is_f else "", "F 14-20": ass if is_f else "",
+            "NOTT 20-08": ass, "hM": 4 if is_p else (6 if is_f else 0),
+            "hP": 6 if (is_p or is_f) else 0, "hN": 12, "FEST": is_f or is_p
+        })
+    st.session_state.db = pd.DataFrame(rows)
 
-for d in range(1, gg + 1):
-    dt = datetime(anno_sel, idx_m, d); wd = dt.weekday()
-    f_n = fest.get((d, idx_m), ""); is_f = wd == 6 or f_n != ""
-    is_p = wd == 5 or (not is_f and ((dt + timedelta(days=1)).weekday() == 6 or ((dt + timedelta(days=1)).day, (dt + timedelta(days=1)).month) in fest))
-    
-    ass = ""
-    if wd in [0, 2]: ass = "Celani"
-    elif wd == 1: ass = "Piscopo"
-    elif wd == 3: ass = "Lombardo"
-    elif wd == 4: v_c += 1; ass = "Celani" if v_c % 2 != 0 else "Piscopo"
-    elif wd in [5, 6]: ass = "Siracusa"
-    
-    prefix = "** " if is_f else ("* " if is_p else "")
-    rows.append({
-        "GIORNO": f"{prefix}{d} {ita_g[wd]} {f_n}",
-        "P 10-14": ass if is_p else "", 
-        "P 14-20": ass if is_p else "",
-        "F 08-14": ass if is_f else "", 
-        "F 14-20": ass if is_f else "", 
-        "NOTT 20-08": ass, 
-        "hM": 4 if is_p else (6 if is_f else 0),
-        "hP": 6 if (is_p or is_f) else 0, 
-        "hN": 12, 
-        "FEST": is_f or is_p
-    })
+if st.session_state.db is not None:
+    config = {k: st.column_config.SelectboxColumn(k, options=[""] + medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
+    df_ed = st.data_editor(st.session_state.db, column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
+                           column_config=config, hide_index=True, use_container_width=True).fillna("")
 
-df_base = pd.DataFrame(rows)
+    # Calcolo Ore Sidebar
+    riepilogo = []
+    for m in medici_attuali:
+        if not m: continue
+        o = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + df_ed[df_ed["F 08-14"]==m]["hM"].sum() + \
+            df_ed[df_ed["P 14-20"]==m]["hP"].sum() + df_ed[df_ed["F 14-20"]==m]["hP"].sum() + \
+            df_ed[df_ed["NOTT 20-08"]==m]["hN"].sum()
+        riepilogo.append({"M": m, "O": int(o)})
+    df_ore = pd.DataFrame(riepilogo); tot_p = df_ore["O"].sum() if not df_ore.empty else 0
 
-# Configurazione editor
-config = {k: st.column_config.SelectboxColumn(k, options=[""] + medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
+    with placeholder_sidebar:
+        for _, r in df_ore.iterrows(): st.write(f"**{r['M']}**: {r['O']} h")
+        st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:20px;font-weight:bold;margin:0;">{tot_p} h</p></div>', unsafe_allow_html=True)
 
-df_ed = st.data_editor(df_base, 
-                       column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
-                       column_config=config, hide_index=True, use_container_width=True).fillna("")
-
-# Calcolo ore per sidebar
-riepilogo = []
-for m in medici_attuali:
-    if not m: continue
-    o = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + df_ed[df_ed["F 08-14"]==m]["hM"].sum() + \
-        df_ed[df_ed["P 14-20"]==m]["hP"].sum() + df_ed[df_ed["F 14-20"]==m]["hP"].sum() + \
-        df_ed[df_ed["NOTT 20-08"]==m]["hN"].sum()
-    riepilogo.append({"M": m, "O": int(o)})
-
-df_ore = pd.DataFrame(riepilogo)
-tot_presidio = df_ore["O"].sum() if not df_ore.empty else 0
-
-with placeholder_sidebar:
-    for _, r in df_ore.iterrows():
-        st.write(f"**{r['M']}**: {r['O']} h")
-    st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:#BFDBFE;margin:0;font-size:12px;">Totale Presidio</p><p style="color:white;font-size:22px;font-weight:bold;margin:0;">{tot_presidio} h</p></div>', unsafe_allow_html=True)
-
-# --- GENERAZIONE PDF ---
-if pdf_ok:
+    # --- ANTEPRIMA E STAMPA PDF ---
     st.write("---")
-    if st.button("📄 SCARICA PDF", use_container_width=True):
+    if st.button("👁️ MOSTRA ANTEPRIMA PER STAMPA", use_container_width=True):
         pdf = FPDF('P', 'mm', 'A4'); pdf.set_margins(8, 8, 8); pdf.add_page()
         pdf.set_font("Arial", 'B', 10); pdf.cell(0, 6, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", 0, 1, 'C'); pdf.ln(2)
-        
         w_g, w_c = 38, 31; pdf.set_font("Arial", 'B', 7)
         h_pdf = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
         for i, head in enumerate(h_pdf): pdf.cell(w_g if i==0 else w_c, 6, head, 1, 0, 'C')
         pdf.ln()
-
         pdf.set_font("Arial", '', 6.5)
         for _, r in df_ed.iterrows():
             pdf.set_fill_color(235, 235, 235) if r["FEST"] else pdf.set_fill_color(255, 255, 255)
@@ -121,15 +110,15 @@ if pdf_ok:
                 if val.lower() in ["none", "nan", "0", ""] or val not in medici_attuali: val = ""
                 pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
             pdf.ln()
-
-        # Riepilogo finale
         pdf.ln(3); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
         for _, ro in df_ore.iterrows():
             pdf.set_font("Arial", 'B', 7); pdf.cell(50, 7, str(ro["M"]), 1, 0, 'C')
             pdf.cell(30, 7, f"{ro['O']} h", 1, 0, 'C'); pdf.cell(60, 7, " Firma: ________________", 1, 1, 'L')
         
-        # Totale nel PDF
-        pdf.set_font("Arial", 'B', 8); pdf.cell(50, 7, "TOTALE PRESIDIO", 1, 0, 'C')
-        pdf.cell(30, 7, f"{tot_presidio} h", 1, 0, 'C'); pdf.cell(60, 7, "", 1, 1, 'C')
+        # Genera output PDF in base64 per l'Iframe
+        pdf_base64 = base64.b64encode(pdf.output(dest='S').encode('latin-1')).decode('utf-8')
+        pdf_display = f'<iframe src="data:application/pdf;base64,{pdf_base64}" width="100%" height="800" type="application/pdf"></iframe>'
+        st.markdown(pdf_display, unsafe_allow_html=True)
         
-        st.download_button("💾 CLICCA QUI PER SALVARE IL PDF", pdf.output(dest='S').encode('latin-1'), f"Turni_{mese_sel}.pdf", "application/pdf", use_container_width=True)
+        # Forniamo comunque il tasto scarica sotto l'anteprima per sicurezza
+        st.download_button("💾 SALVA FILE PDF", pdf.output(dest='S').encode('latin-1'), f"Turni_{mese_sel}.pdf", "application/pdf", use_container_width=True)
