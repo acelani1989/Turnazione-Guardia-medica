@@ -68,7 +68,6 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
         prefix = "** " if is_f else ("* " if is_p else "")
         label = f"{prefix}{d} {ita_g[wd]} {f_n}"
         
-        # Pulizia: assegniamo solo se necessario, altrimenti stringa vuota
         rows.append({
             "GIORNO": label, 
             "P 10-14": assegnato if is_p else "", 
@@ -89,7 +88,7 @@ if 'db' in st.session_state:
     df_ed = st.data_editor(st.session_state.db, 
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"), 
                            column_config=column_config,
-                           hide_index=True, use_container_width=True).fillna("") # Elimina None nell'interfaccia
+                           hide_index=True, use_container_width=True).fillna("")
 
     # Calcolo Ore Reattivo
     riepilogo = []
@@ -114,29 +113,23 @@ if 'db' in st.session_state:
             pdf.set_margins(8, 8, 8); pdf.add_page(); pdf.set_font("Arial", 'B', 10)
             pdf.cell(0, 6, "PCA PORTO EMPEDOCLE - TURNI E ORE", 0, 1, 'C')
             pdf.cell(0, 6, f"{mese_sel} {anno_sel}", 0, 1, 'C'); pdf.ln(2)
-            
             w_g, w_c = 38, 31
             pdf.set_font("Arial", 'B', 7)
-            for i, col in enumerate(["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]):
-                pdf.cell(w_g if i==0 else w_c, 6, col, 1, 0, 'C')
+            for i, col in enumerate(["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]): pdf.cell(w_g if i==0 else w_c, 6, col, 1, 0, 'C')
             pdf.ln()
-            
             pdf.set_font("Arial", '', 6.5)
             for _, r in df_ed.iterrows():
                 pdf.set_fill_color(200, 200, 200) if r["TIPO"] == "E" else pdf.set_fill_color(255, 255, 255)
                 pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-                    # Pulizia definitiva del None per il PDF
                     val = str(r[k]) if r[k] and str(r[k]) not in ["None", "nan", ""] else ""
                     pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
                 pdf.ln()
-            
             pdf.ln(2); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
             pdf.set_font("Arial", 'B', 7); pdf.cell(50, 6, "MEDICO", 1, 0, 'C'); pdf.cell(30, 6, "ORE", 1, 0, 'C'); pdf.cell(60, 6, "FIRMA", 1, 1, 'C')
             for _, row_o in df_ore.iterrows():
                 pdf.set_font("Arial", 'B', 7); pdf.cell(50, 8, str(row_o["Medico"]), 1, 0, 'C')
                 pdf.set_font("Arial", '', 7); pdf.cell(30, 8, str(row_o["Ore Totali"]), 1, 0, 'C'); pdf.cell(60, 8, "", 1, 1, 'C')
-            
             st.download_button("💾 SALVA PDF", pdf.output(dest='S').encode('latin-1'), "Turni.pdf", "application/pdf", use_container_width=True)
 
     # --- ANTEPRIMA ORE AGGIORNATA IN TEMPO REALE ---
@@ -147,4 +140,11 @@ if 'db' in st.session_state:
         ore_m = df_ore[df_ore["Medico"] == m]["Ore Totali"].values[0]
         col_metrics[i].metric(label=f"Ore {m}", value=f"{ore_m} h")
     
-    st.info(f"**Totale Ore Complessive Presidio:** {df_ore['Ore Totali'].sum()} h")
+    # BOX TOTALE COMPLESSIVO INGRANDITO
+    totale_mensile = df_ore['Ore Totali'].sum()
+    st.markdown(f"""
+        <div style="background-color:#1E3A8A; padding:20px; border-radius:10px; text-align:center;">
+            <h1 style="color:white; margin:0;">TOTALE ORE COMPLESSIVE PRESIDIO</h1>
+            <p style="color:#60A5FA; font-size:48px; font-weight:bold; margin:0;">{totale_mensile} h</p>
+        </div>
+    """, unsafe_allow_html=True)
