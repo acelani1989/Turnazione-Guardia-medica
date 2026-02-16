@@ -83,14 +83,13 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
 if 'db' in st.session_state:
     column_config = {k: st.column_config.SelectboxColumn(k, options=medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
 
-    # Visualizzazione editor
+    # Visualizzazione editor (Aggiunto fillna per pulizia immediata a video)
     df_ed = st.data_editor(st.session_state.db, 
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"), 
                            column_config=column_config,
-                           hide_index=True, use_container_width=True)
+                           hide_index=True, use_container_width=True).fillna("")
 
-    # --- PULIZIA RADICALE PER CALCOLI E EXPORT ---
-    # Sostituiamo ogni valore nullo o stringa "None" con una stringa veramente vuota
+    # --- PULIZIA RADICALE ---
     df_clean = df_ed.copy().replace(["None", "none", "nan", "NaN", None], "")
 
     riepilogo = []
@@ -106,7 +105,6 @@ if 'db' in st.session_state:
         buf_ex = io.BytesIO()
         with pd.ExcelWriter(buf_ex, engine='xlsxwriter') as writer:
             df_clean.drop(columns=["hM","hP","hN","TIPO"]).to_excel(writer, index=False)
-            df_ore.to_excel(writer, index=False, sheet_name='Ore')
         st.download_button("📥 SCARICA EXCEL", buf_ex.getvalue(), "Turni.xlsx", use_container_width=True)
 
     with c2:
@@ -129,8 +127,8 @@ if 'db' in st.session_state:
                 
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
                     val = r[k]
-                    # Controllo finale: se è vuoto, None o nan, scrivi ""
-                    txt = str(val) if (val and str(val).strip().lower() != "none") else ""
+                    # Se il valore è nullo o è la stringa "None", scrivi ""
+                    txt = str(val) if (val and str(val).strip().lower() != "none" and str(val) != "") else ""
                     pdf.cell(w_c, 5.2, txt, 1, 0, 'C', True)
                 pdf.ln()
             
