@@ -92,34 +92,36 @@ if st.session_state.db is not None:
         for _, r in df_ore.iterrows(): st.write(f"**{r['M']}**: {r['O']} h")
         st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:20px;font-weight:bold;margin:0;">{tot_p} h</p></div>', unsafe_allow_html=True)
 
-    # --- SISTEMA DI STAMPA UNIVERSALE ---
+    # --- GENERAZIONE ANTEPRIMA ISTANTANEA ---
     st.write("---")
-    if st.button("📄 PREPARA DOCUMENTO PER STAMPA", use_container_width=True):
-        pdf = FPDF('P', 'mm', 'A4'); pdf.set_margins(8, 8, 8); pdf.add_page()
-        pdf.set_font("Arial", 'B', 10); pdf.cell(0, 6, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", 0, 1, 'C'); pdf.ln(2)
-        w_g, w_c = 38, 31; pdf.set_font("Arial", 'B', 7)
-        h_pdf = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
-        for i, head in enumerate(h_pdf): pdf.cell(w_g if i==0 else w_c, 6, head, 1, 0, 'C')
+    st.subheader("👁️ ANTEPRIMA PDF (PRONTO PER STAMPA)")
+    
+    pdf = FPDF('P', 'mm', 'A4'); pdf.set_margins(8, 8, 8); pdf.add_page()
+    pdf.set_font("Arial", 'B', 10); pdf.cell(0, 6, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", 0, 1, 'C'); pdf.ln(2)
+    w_g, w_c = 38, 31; pdf.set_font("Arial", 'B', 7)
+    h_pdf = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
+    for i, head in enumerate(h_pdf): pdf.cell(w_g if i==0 else w_c, 6, head, 1, 0, 'C')
+    pdf.ln()
+    pdf.set_font("Arial", '', 6.5)
+    for _, r in df_ed.iterrows():
+        pdf.set_fill_color(235, 235, 235) if "*" in str(r["GIORNO"]) else pdf.set_fill_color(255, 255, 255)
+        pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
+        for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
+            val = str(r[k]).strip()
+            if val.lower() in ["none", "nan", "0", ""] or val not in medici_attuali: val = ""
+            pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
         pdf.ln()
-        pdf.set_font("Arial", '', 6.5)
-        for _, r in df_ed.iterrows():
-            pdf.set_fill_color(235, 235, 235) if "*" in str(r["GIORNO"]) else pdf.set_fill_color(255, 255, 255)
-            pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
-            for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-                val = str(r[k]).strip()
-                if val.lower() in ["none", "nan", "0", ""] or val not in medici_attuali: val = ""
-                pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
-            pdf.ln()
-        pdf.ln(3); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
-        for _, ro in df_ore.iterrows():
-            pdf.set_font("Arial", 'B', 7); pdf.cell(50, 7, str(ro["M"]), 1, 0, 'C')
-            pdf.cell(30, 7, f"{ro['O']} h", 1, 0, 'C'); pdf.cell(60, 7, " Firma: ________________", 1, 1, 'L')
-        
-        # Creazione del link di download/stampa compatibile
-        pdf_bytes = pdf.output(dest='S').encode('latin-1')
-        b64 = base64.b64encode(pdf_bytes).decode()
-        
-        # Pulsante stilizzato che apre il PDF in una nuova scheda (Metodo Universale)
-        href = f'<a href="data:application/pdf;base64,{b64}" target="_blank" style="text-decoration: none;"><div style="background-color: #007bff; color: white; padding: 15px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 18px;">✅ CLICCA QUI PER APRIRE E STAMPARE (FUNZIONA SU TUTTI I BROWSER)</div></a>'
-        st.markdown(href, unsafe_allow_html=True)
-        st.info("Dopo aver cliccato, il PDF si aprirà. Potrai stamparlo premendo CTRL+P sulla tastiera o usando l'icona della stampante del browser.")
+    pdf.ln(3); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
+    for _, ro in df_ore.iterrows():
+        pdf.set_font("Arial", 'B', 7); pdf.cell(50, 7, str(ro["M"]), 1, 0, 'C')
+        pdf.cell(30, 7, f"{ro['O']} h", 1, 0, 'C'); pdf.cell(60, 7, " Firma: ________________", 1, 1, 'L')
+    pdf.set_font("Arial", 'B', 8); pdf.cell(50, 7, "TOTALE PRESIDIO", 1, 0, 'C')
+    pdf.cell(30, 7, f"{tot_p} h", 1, 0, 'C'); pdf.cell(60, 7, "", 1, 1, 'C')
+
+    # Visualizzazione con EMBED (più robusto di iframe per Edge)
+    pdf_base64 = base64.b64encode(pdf.output(dest='S').encode('latin-1')).decode('utf-8')
+    pdf_embed = f'<embed src="data:application/pdf;base64,{pdf_base64}" width="100%" height="1000" type="application/pdf">'
+    st.markdown(pdf_embed, unsafe_allow_html=True)
+    
+    st.write("---")
+    st.download_button("💾 SALVA PDF SUL PC", pdf.output(dest='S').encode('latin-1'), f"Turni_{mese_sel}.pdf", "application/pdf", use_container_width=True)
