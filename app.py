@@ -43,80 +43,92 @@ if 'db' not in st.session_state:
 if 'medici_lista' not in st.session_state:
     st.session_state.medici_lista = ["Celani", "Piscopo", "Lombardo", "Siracusa"]
 
-# --- 3. SIDEBAR (Sempre visibile) ---
+# --- 3. SIDEBAR: GESTIONE MEDICI SELEZIONABILI E REMOVIBILI ---
 with st.sidebar:
     st.header("⚙️ CONFIGURAZIONE")
     
-    # Lista Medici Esistenti
-    st.subheader("👨‍⚕️ Medici in Anagrafica")
-    for med in st.session_state.medici_lista:
-        st.text(f"• {med}")
-    
-    st.write("---")
+    # AGGIUNTA
     new_med = st.text_input("➕ Aggiungi nuovo medico")
-    if st.button("Aggiungi alla lista"):
+    if st.button("Aggiungi"):
         if new_med and new_med not in st.session_state.medici_lista:
             st.session_state.medici_lista.append(new_med)
             st.rerun()
     
+    # SELEZIONE E RIMOZIONE
+    st.subheader("👨‍⚕️ Gestione Medici")
+    medici_attivi = st.multiselect("Medici in servizio questo mese:", 
+                                   options=st.session_state.medici_lista, 
+                                   default=st.session_state.medici_lista)
+    
+    with st.expander("🗑️ Rimuovi medici dall'anagrafica"):
+        for m in st.session_state.medici_lista:
+            if st.button(f"Elimina {m}", key=f"del_{m}"):
+                st.session_state.medici_lista.remove(m)
+                st.rerun()
+
     st.write("---")
     anno_sel = st.number_input("Anno", 2024, 2030, 2026)
     mesi_ita = ["GENNAIO", "FEBBRAIO", "MARZO", "APRILE", "MAGGIO", "GIUGNO", "LUGLIO", "AGOSTO", "SETTEMBRE", "OTTOBRE", "NOVEMBRE", "DICEMBRE"]
     mese_sel = st.selectbox("Mese", mesi_ita, index=datetime.now().month - 1)
     idx_m = mesi_ita.index(mese_sel) + 1
     
-    # Placeholder per le ore (verrà riempito dopo la generazione)
     placeholder_ore = st.empty()
     
     st.write("---")
-    st.subheader("💾 Backup")
     if st.session_state.db is not None:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df_export = st.session_state.db.copy().replace(["None", "nan", "NaN", "0", 0, "0.0"], "")
             df_export.to_excel(writer, sheet_name='Turni', index=False)
             pd.DataFrame({"ListaMedici": st.session_state.medici_lista}).to_excel(writer, sheet_name='Anagrafica', index=False)
-        st.download_button("📤 SCARICA BACKUP EXCEL", buffer.getvalue(), f"backup_{mese_sel}.xlsx", use_container_width=True)
+        st.download_button("📤 BACKUP EXCEL", buffer.getvalue(), f"backup_{mese_sel}.xlsx", use_container_width=True)
 
 # --- 4. LOGICA GENERAZIONE ---
 if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_width=True):
-    fest = get_festivita(anno_sel)
-    gg = calendar.monthrange(anno_sel, idx_m)[1]
-    rows = []
-    ita_g = ["LUNEDÌ", "MARTEDÌ", "MERCOLEDÌ", "GIOVEDÌ", "VENERDÌ", "SABATO", "DOMENICA"]
-    ven_count = 0
-    
-    for d in range(1, gg + 1):
-        dt = datetime(anno_sel, idx_m, d)
-        wd = dt.weekday()
-        f_n = fest.get((d, idx_m), "")
-        is_f = (wd == 6 or f_n != "")
-        is_p = (wd == 5 or (not is_f and ((dt + timedelta(days=1)).weekday() == 6 or ((dt + timedelta(days=1)).day, (dt + timedelta(days=1)).month) in fest)))
+    if not medici_attivi:
+        st.warning("Seleziona almeno un medico dalla lista a sinistra!")
+    else:
+        fest = get_festivita(anno_sel)
+        gg = calendar.monthrange(anno_sel, idx_m)[1]
+        rows = []
+        ita_g = ["LUNEDÌ", "MARTEDÌ", "MERCOLEDÌ", "GIOVEDÌ", "VENERDÌ", "SABATO", "DOMENICA"]
+        ven_count = 0
         
-        ass_notte = ""
-        if wd in [0, 2]: ass_notte = "Celani"
-        elif wd == 1: ass_notte = "Piscopo"
-        elif wd == 3: ass_notte = "Lombardo"
-        elif wd == 4: 
-            ven_count += 1
-            ass_notte = "Celani" if ven_count % 2 != 0 else "Piscopo"
-        elif wd in [5, 6]: ass_notte = "Siracusa"
-        
-        ass_diurna = ass_notte if ((is_p or is_f) and ass_notte != "Lombardo") else ""
-        prefix = "** " if is_f else ("* " if is_p else "  ")
-        
-        rows.append({
-            "GIORNO": f"{prefix}{d} {ita_g[wd]} {f_n}",
-            "P 10-14": ass_diurna if is_p else "", 
-            "P 14-20": ass_diurna if is_p else "",
-            "F 08-14": ass_diurna if is_f else "", 
-            "F 14-20": ass_diurna if is_f else "",
-            "NOTT 20-08": ass_notte,
-            "TIPO": "FEST" if is_f else ("PREF" if is_p else "FER")
-        })
-    st.session_state.db = pd.DataFrame(rows).replace(["None", "nan", "NaN", "0", 0, "0.0"], "")
+        for d in range(1, gg + 1):
+            dt = datetime(anno_sel, idx_m, d)
+            wd = dt.weekday()
+            f_n = fest.get((d, idx_m), "")
+            is_f = (wd == 6 or f_n != "")
+            is_p = (wd == 5 or (not is_f and ((dt + timedelta(days=1)).weekday() == 6 or ((dt + timedelta(days=1)).day, (dt + timedelta(days=1)).month) in fest)))
+            
+            # Assegnazione basata sui medici selezionati (fall-back se i default non sono selezionati)
+            def get_m(name, fallback_idx):
+                return name if name in medici_attivi else (medici_attivi[fallback_idx % len(medici_attivi)] if medici_attivi else "")
 
-# --- 5. VISUALIZZAZIONE E PDF ---
+            ass_notte = ""
+            if wd in [0, 2]: ass_notte = get_m("Celani", 0)
+            elif wd == 1: ass_notte = get_m("Piscopo", 1)
+            elif wd == 3: ass_notte = get_m("Lombardo", 2)
+            elif wd == 4: 
+                ven_count += 1
+                ass_notte = get_m("Celani", 0) if ven_count % 2 != 0 else get_m("Piscopo", 1)
+            elif wd in [5, 6]: ass_notte = get_m("Siracusa", 3)
+            
+            ass_diurna = ass_notte if ((is_p or is_f) and ass_notte != "Lombardo") else ""
+            prefix = "** " if is_f else ("* " if is_p else "  ")
+            
+            rows.append({
+                "GIORNO": f"{prefix}{d} {ita_g[wd]} {f_n}",
+                "P 10-14": ass_diurna if is_p else "", 
+                "P 14-20": ass_diurna if is_p else "",
+                "F 08-14": ass_diurna if is_f else "", 
+                "F 14-20": ass_diurna if is_f else "",
+                "NOTT 20-08": ass_notte,
+                "TIPO": "FEST" if is_f else ("PREF" if is_p else "FER")
+            })
+        st.session_state.db = pd.DataFrame(rows).replace(["None", "nan", "NaN", "0", 0], "")
+
+# --- 5. EDITOR E PDF ---
 if st.session_state.db is not None:
     # Calcolo Ore
     riepilogo_medici = []
@@ -131,14 +143,12 @@ if st.session_state.db is not None:
             riepilogo_medici.append((m, tot))
             tot_ore_mese += tot
 
-    # Mostra ore nella sidebar
     with placeholder_ore.container():
         st.subheader("📊 Ore Medici")
-        for m, o in riepilogo_medici:
-            st.write(f"**{m}**: {o} h")
+        for m, o in riepilogo_medici: st.write(f"**{m}**: {o} h")
         st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:20px;font-weight:bold;margin:0;">TOT: {tot_ore_mese} h</p></div>', unsafe_allow_html=True)
 
-    # PDF con asterischi e firme
+    # Creazione PDF con asterischi e firme
     pdf = FPDF('P', 'mm', 'A4')
     pdf.set_margins(7, 10, 7)
     pdf.add_page()
@@ -173,7 +183,7 @@ if st.session_state.db is not None:
     
     st.download_button("💾 SCARICA PDF FINALE", bytes(pdf.output()), f"Turni_{mese_sel}.pdf", use_container_width=True)
 
-    # Editor Tabella
+    # Editor Tabella (con pulizia None integrata)
     config = {k: st.column_config.SelectboxColumn(k, options=[""] + st.session_state.medici_lista) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
     df_ed = st.data_editor(st.session_state.db.replace(["None", "nan", "NaN", "0", 0], ""), 
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
