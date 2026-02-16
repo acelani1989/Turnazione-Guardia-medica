@@ -3,12 +3,7 @@ import pandas as pd
 import calendar
 import io
 from datetime import datetime, timedelta
-
-# Importazione FPDF
-try:
-    from fpdf import FPDF
-except ImportError:
-    st.error("Libreria FPDF non trovata. Aggiungi 'fpdf2' al file requirements.txt")
+from fpdf import FPDF
 
 # --- 1. FUNZIONE FESTIVITÀ ITALIANE ---
 def get_festivita(anno):
@@ -40,14 +35,12 @@ st.set_page_config(page_title="Turni PCA Porto Empedocle", layout="wide")
 st.markdown("""
     <style>
     div.stButton > button:first-child {
-        background-color: #ff4b4b;
-        color: white;
-        border: none;
+        background-color: #ff4b4b !important;
+        color: white !important;
+        font-weight: bold !important;
     }
-    /* Nasconde le scritte residue in basso */
-    [data-testid="stVerticalBlock"] > div:last-child {
-        display: none !important;
-    }
+    footer {visibility: hidden;}
+    [data-testid="stElementToolbar"] {display: none;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -61,6 +54,7 @@ if 'medici_lista' not in st.session_state:
 # --- 3. SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ CONFIGURAZIONE")
+    
     new_med = st.text_input("➕ Aggiungi nuovo medico")
     if st.button("Aggiungi"):
         if new_med and new_med not in st.session_state.medici_lista:
@@ -68,7 +62,9 @@ with st.sidebar:
             st.rerun()
     
     st.subheader("👨‍⚕️ Medici in Servizio")
-    medici_attivi = st.multiselect("Medici attivi:", options=st.session_state.medici_lista, default=st.session_state.medici_lista)
+    medici_attivi = st.multiselect("Chi lavora questo mese?", 
+                                   options=st.session_state.medici_lista, 
+                                   default=st.session_state.medici_lista)
     
     with st.expander("🗑️ Rimuovi medici"):
         for m in st.session_state.medici_lista:
@@ -81,12 +77,38 @@ with st.sidebar:
     mesi_ita = ["GENNAIO", "FEBBRAIO", "MARZO", "APRILE", "MAGGIO", "GIUGNO", "LUGLIO", "AGOSTO", "SETTEMBRE", "OTTOBRE", "NOVEMBRE", "DICEMBRE"]
     mese_sel = st.selectbox("Mese", mesi_ita, index=datetime.now().month - 1)
     idx_m = mesi_ita.index(mese_sel) + 1
+    
     placeholder_ore = st.empty()
+
+    # --- SEZIONE BACKUP ---
+    st.write("---")
+    st.subheader("💾 Backup e Ripristino")
+    
+    # 1. Scarica Backup
+    if st.session_state.db is not None:
+        buffer_ex = io.BytesIO()
+        with pd.ExcelWriter(buffer_ex, engine='xlsxwriter') as writer:
+            st.session_state.db.to_excel(writer, sheet_name='Turni', index=False)
+            pd.DataFrame(st.session_state.medici_lista, columns=['Medici']).to_excel(writer, sheet_name='Anagrafica', index=False)
+        st.download_button("📥 Scarica Backup Excel", data=buffer_ex.getvalue(), file_name=f"Backup_Turni_{mese_sel}.xlsx", use_container_width=True)
+
+    # 2. Carica Backup
+    uploaded_file = st.file_uploader("📂 Carica file Backup", type="xlsx")
+    if uploaded_file:
+        try:
+            df_turni = pd.read_excel(uploaded_file, sheet_name='Turni')
+            df_medici = pd.read_excel(uploaded_file, sheet_name='Anagrafica')
+            st.session_state.db = df_turni
+            st.session_state.medici_lista = df_medici['Medici'].tolist()
+            st.success("Backup caricato con successo!")
+            # Non facciamo rerun qui per evitare loop con l'uploader
+        except Exception as e:
+            st.error(f"Errore nel caricamento: {e}")
 
 # --- 4. TASTO ROSSO GENERA ---
 if st.button("🚀 GENERA SCHEMA AUTOMATICO", use_container_width=True):
     if not medici_attivi:
-        st.warning("Seleziona i medici dalla sidebar!")
+        st.warning("Seleziona i medici!")
     else:
         fest = get_festivita(anno_sel)
         gg = calendar.monthrange(anno_sel, idx_m)[1]
@@ -118,21 +140,18 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", use_container_width=True):
             
             rows.append({
                 "GIORNO": f"{prefix}{d} {ita_g[wd]} {f_n}",
-                "P 10-14": ass_diurna if is_p else "", 
-                "P 14-20": ass_diurna if is_p else "",
-                "F 08-14": ass_diurna if is_f else "", 
-                "F 14-20": ass_diurna if is_f else "",
-                "NOTT 20-08": ass_notte,
-                "TIPO": "FEST" if is_f else ("PREF" if is_p else "FER")
+                "P 10-14": ass_diurna if is_p else "", "P 14-20": ass_diurna if is_p else "",
+                "F 08-14": ass_diurna if is_f else "", "F 14-20": ass_diurna if is_f else "",
+                "NOTT 20-08": ass_notte
             })
         st.session_state.db = pd.DataFrame(rows)
 
 # --- 5. VISUALIZZAZIONE ---
 if st.session_state.db is not None:
     # Pulizia
-    st.session_state.db = st.session_state.db.fillna("").replace(["None", "nan", "NaN", "0", 0, 0.0, "0.0"], "")
+    st.session_state.db = st.session_state.db.fillna("").replace(["None", "nan", "NaN", "0", 0, 0.0], "")
 
-    # Calcolo Ore
+    # Riepilogo Ore
     riepilogo_medici = []
     tot_ore_mese = 0
     for m in st.session_state.medici_lista:
@@ -147,20 +166,17 @@ if st.session_state.db is not None:
     with placeholder_ore.container():
         st.subheader("📊 Ore Medici")
         for m, o in riepilogo_medici: st.write(f"**{m}**: {o} h")
-        st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:20px;font-weight:bold;margin:0;">TOT: {tot_ore_mese} h</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:18px;font-weight:bold;margin:0;">TOT: {tot_ore_mese} h</p></div>', unsafe_allow_html=True)
 
-    # Preparazione PDF (Corretto per fpdf2)
+    # PDF
     pdf = FPDF('P', 'mm', 'A4')
-    pdf.set_margins(7, 10, 7)
-    pdf.add_page()
-    pdf.set_font("helvetica", 'B', 10)
-    pdf.cell(0, 6, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", align='C', ln=1)
+    pdf.set_margins(7, 10, 7); pdf.add_page(); pdf.set_font("helvetica", 'B', 10)
+    pdf.cell(0, 8, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", align='C', ln=1)
     pdf.ln(2)
     w_g, w_c = 42, 30
     pdf.set_font("helvetica", 'B', 7)
     cols = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
-    for i, col_name in enumerate(cols):
-        pdf.cell(w_g if i==0 else w_c, 6, col_name, 1, 0, 'C')
+    for i, c in enumerate(cols): pdf.cell(w_g if i==0 else w_c, 6, c, 1, 0, 'C')
     pdf.ln()
     pdf.set_font("helvetica", '', 6.5)
     for _, r in st.session_state.db.iterrows():
@@ -173,20 +189,13 @@ if st.session_state.db is not None:
         pdf.ln()
     pdf.ln(5); pdf.set_font("helvetica", 'B', 8); pdf.cell(0, 6, "RIEPILOGO ORE E FIRME", ln=1)
     for m, o in riepilogo_medici:
-        pdf.set_font("helvetica", 'B', 7); pdf.cell(45, 7, str(m), 1, 0, 'C')
+        pdf.set_font("helvetica", 'B', 7); pdf.cell(45, 7, f"Dott. {m}", 1, 0, 'C')
         pdf.cell(20, 7, f"{o} h", 1, 0, 'C'); pdf.cell(70, 7, " Firma: ________________", 1, 1, 'L')
 
-    # DOWNLOAD E TABELLA
     st.write("---")
-    # Qui usiamo pdf.output() che restituisce direttamente i byte
     st.download_button("💾 SCARICA PDF FINALE", data=pdf.output(), file_name=f"Turni_{mese_sel}.pdf", use_container_width=True)
 
+    # Editor
     config = {k: st.column_config.SelectboxColumn(k, options=[""] + st.session_state.medici_lista) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
-    df_ed = st.data_editor(
-        st.session_state.db, 
-        column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
-        column_config=config, 
-        hide_index=True, 
-        use_container_width=True
-    )
+    df_ed = st.data_editor(st.session_state.db, hide_index=True, use_container_width=True, column_config=config)
     st.session_state.db = df_ed
