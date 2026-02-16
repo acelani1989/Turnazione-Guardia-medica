@@ -49,8 +49,11 @@ if st.button("🚀 GENERA SCHEMA", type="primary", use_container_width=True):
         is_f = wd == 6 or f_n != ""
         is_p = wd == 5 or (not is_f and ((dt + timedelta(days=1)).weekday() == 6 or ((dt + timedelta(days=1)).day, (dt + timedelta(days=1)).month) in fest))
         
-        # Simbolo unico per evidenziare entrambi (Prefestivi e Festivi)
-        prefix = "* " if (is_f or is_p) else ""
+        # Asterischi differenziati
+        if is_f: prefix = "** "
+        elif is_p: prefix = "* "
+        else: prefix = ""
+        
         label = f"{prefix}{d} {ita_g[wd]} {f_n}"
         
         rows.append({"GIORNO": label, "P 10-14": "", "P 14-20": "", "F 08-14": "", "F 14-20": "", "NOTT 20-08": "", 
@@ -76,7 +79,7 @@ if 'db' in st.session_state:
             df_ed.drop(columns=["hM","hP","hN","TIPO"]).to_excel(writer, index=False, sheet_name='Turni')
             df_ore.to_excel(writer, index=False, sheet_name='Ore')
             wb, ws = writer.book, writer.sheets['Turni']
-            f_evidenza = wb.add_format({'bg_color': '#B0B0B0'}) # Grigio scuro per entrambi
+            f_evidenza = wb.add_format({'bg_color': '#B0B0B0'})
             for i, t in enumerate(df_ed["TIPO"]):
                 if t == "E": ws.set_row(i+1, None, f_evidenza)
         st.download_button("📥 EXCEL", buf_ex.getvalue(), "Turni.xlsx", use_container_width=True)
@@ -100,10 +103,7 @@ if 'db' in st.session_state:
             pdf.set_font("Arial", '', 6.5)
             for _, r in df_ed.iterrows():
                 # Evidenziazione UGUALI (Grigio 200 per entrambi)
-                if r["TIPO"] == "E":
-                    pdf.set_fill_color(200, 200, 200)
-                else:
-                    pdf.set_fill_color(255, 255, 255)
+                pdf.set_fill_color(200, 200, 200) if r["TIPO"] == "E" else pdf.set_fill_color(255, 255, 255)
                 
                 pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
@@ -114,7 +114,7 @@ if 'db' in st.session_state:
             # Legenda e Riepilogo
             pdf.ln(2)
             pdf.set_font("Arial", 'I', 6)
-            pdf.cell(0, 4, "* Indica Giorno Festivo o Prefestivo (Evidenziato in Grigio)", 0, 1, 'L')
+            pdf.cell(0, 4, "Legenda: ** Festivo | * Prefestivo (Entrambi evidenziati in grigio)", 0, 1, 'L')
             
             pdf.ln(2)
             pdf.set_font("Arial", 'B', 8)
