@@ -66,37 +66,39 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
         prefix = "** " if is_f else ("* " if is_p else "")
         label = f"{prefix}{d} {ita_g[wd]} {f_n}"
         
+        # Garantiamo stringhe vuote invece di None in fase di creazione
         rows.append({
             "GIORNO": label, 
             "P 10-14": assegnato if is_p else "", 
             "P 14-20": assegnato if is_p else "",
             "F 08-14": assegnato if is_f else "", 
             "F 14-20": assegnato if is_f else "", 
-            "NOTT 20-08": assegnato,
+            "NOTT 20-08": assegnato if assegnato else "",
             "hM": 4 if is_p else (6 if is_f else 0), 
             "hP": 6 if (is_p or is_f) else 0, 
             "hN": 12, 
             "TIPO": "E" if (is_f or is_p) else "N"
         })
-    st.session_state.db = pd.DataFrame(rows)
+    st.session_state.db = pd.DataFrame(rows).fillna("")
 
 if 'db' in st.session_state:
     column_config = {k: st.column_config.SelectboxColumn(k, options=medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
 
-    # Visualizzazione editor (Aggiunto fillna per pulizia immediata a video)
+    # Visualizzazione editor con pulizia istantanea
     df_ed = st.data_editor(st.session_state.db, 
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"), 
                            column_config=column_config,
-                           hide_index=True, use_container_width=True).fillna("")
+                           hide_index=True, use_container_width=True)
+    
+    # Sostituzione forzata di ogni possibile None residuo
+    df_clean = df_ed.copy().astype(str).replace(["None", "nan", "NaN", "<NA>"], "")
 
-    # --- PULIZIA RADICALE ---
-    df_clean = df_ed.copy().replace(["None", "none", "nan", "NaN", None], "")
-
+    # Calcolo Ore
     riepilogo = []
     for m in medici_attuali:
-        ore = df_clean[df_clean["P 10-14"]==m]["hM"].sum() + df_clean[df_clean["F 08-14"]==m]["hM"].sum() + \
-              df_clean[df_clean["P 14-20"]==m]["hP"].sum() + df_clean[df_clean["F 14-20"]==m]["hP"].sum() + \
-              df_clean[df_clean["NOTT 20-08"]==m]["hN"].sum()
+        ore = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + df_ed[df_ed["F 08-14"]==m]["hM"].sum() + \
+              df_ed[df_ed["P 14-20"]==m]["hP"].sum() + df_ed[df_ed["F 14-20"]==m]["hP"].sum() + \
+              df_ed[df_ed["NOTT 20-08"]==m]["hN"].sum()
         riepilogo.append({"Medico": m, "Ore Totali": int(ore)})
     df_ore = pd.DataFrame(riepilogo)
 
@@ -126,9 +128,8 @@ if 'db' in st.session_state:
                 pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
                 
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-                    val = r[k]
-                    # Se il valore è nullo o è la stringa "None", scrivi ""
-                    txt = str(val) if (val and str(val).strip().lower() != "none" and str(val) != "") else ""
+                    # Pulizia estrema pre-stampa
+                    txt = r[k] if (r[k] and r[k] != "None" and r[k] != "") else ""
                     pdf.cell(w_c, 5.2, txt, 1, 0, 'C', True)
                 pdf.ln()
             
@@ -151,6 +152,6 @@ if 'db' in st.session_state:
     st.markdown(f"""
         <div style="background-color:#1E3A8A; padding:20px; border-radius:10px; text-align:center;">
             <h1 style="color:white; margin:0; font-size:24px;">TOTALE ORE COMPLESSIVE PRESIDIO</h1>
-            <p style="color:#60A5FA; font-size:64px; font-weight:bold; margin:0;">{totale_mensile} h</p>
+            <p style="color:#60A5FA; font-size:72px; font-weight:bold; margin:0;">{totale_mensile} h</p>
         </div>
     """, unsafe_allow_html=True)
