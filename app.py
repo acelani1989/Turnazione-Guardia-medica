@@ -40,6 +40,7 @@ with st.sidebar:
     mese_sel = st.selectbox("Mese", mesi_ita, index=datetime.now().month - 1)
     idx_m = mesi_ita.index(mese_sel) + 1
     
+    # Contenitore per il riepilogo laterale
     placeholder_sidebar = st.container()
 
 if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_width=True):
@@ -85,11 +86,13 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
 if 'db' in st.session_state:
     column_config = {k: st.column_config.SelectboxColumn(k, options=medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
 
+    # Editor della tabella
     df_ed = st.data_editor(st.session_state.db, 
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"), 
                            column_config=column_config,
                            hide_index=True, use_container_width=True).fillna("")
 
+    # Calcolo Ore
     riepilogo = []
     for m in medici_attuali:
         ore = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + df_ed[df_ed["F 08-14"]==m]["hM"].sum() + \
@@ -99,9 +102,10 @@ if 'db' in st.session_state:
     df_ore = pd.DataFrame(riepilogo)
     totale_mensile = df_ore['Ore Totali'].sum()
 
+    # --- AGGIORNAMENTO SIDEBAR (UNICO RIEPILOGO) ---
     with placeholder_sidebar:
         st.write("---")
-        st.subheader("📊 Ore in tempo reale")
+        st.subheader("📊 Ore Medici")
         for _, row in df_ore.iterrows():
             st.write(f"**{row['Medico']}**: {row['Ore Totali']} h")
         
@@ -112,6 +116,7 @@ if 'db' in st.session_state:
             </div>
         """, unsafe_allow_html=True)
 
+    # Pulsanti Download
     c1, c2 = st.columns(2)
     with c1:
         buf_ex = io.BytesIO()
@@ -142,31 +147,15 @@ if 'db' in st.session_state:
                     pdf.cell(w_c, 5.2, r[k], 1, 0, 'C', True)
                 pdf.ln()
             
-            # --- AGGIUNTA TOTALE PDF ---
+            # Riepilogo Ore nel PDF
             pdf.ln(2); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
             pdf.set_font("Arial", 'B', 7); pdf.cell(50, 6, "MEDICO", 1, 0, 'C'); pdf.cell(30, 6, "ORE", 1, 0, 'C'); pdf.cell(60, 6, "FIRMA", 1, 1, 'C')
             for _, row_o in df_ore.iterrows():
                 pdf.set_font("Arial", 'B', 7); pdf.cell(50, 8, str(row_o["Medico"]), 1, 0, 'C')
                 pdf.set_font("Arial", '', 7); pdf.cell(30, 8, str(row_o["Ore Totali"]), 1, 0, 'C'); pdf.cell(60, 8, "", 1, 1, 'C')
             
-            # Riga finale totale in PDF
-            pdf.set_font("Arial", 'B', 8)
-            pdf.cell(50, 8, "TOTALE COMPLESSIVO", 1, 0, 'C')
-            pdf.cell(30, 8, f"{totale_mensile} h", 1, 0, 'C')
-            pdf.cell(60, 8, "", 1, 1, 'C')
+            # Riga Totale PDF
+            pdf.set_font("Arial", 'B', 8); pdf.cell(50, 8, "TOTALE COMPLESSIVO", 1, 0, 'C')
+            pdf.cell(30, 8, f"{totale_mensile} h", 1, 0, 'C'); pdf.cell(60, 8, "", 1, 1, 'C')
 
             st.download_button("💾 SALVA PDF", pdf.output(dest='S').encode('latin-1'), "Turni.pdf", "application/pdf", use_container_width=True)
-
-    st.write("---")
-    st.subheader(f"📊 Riepilogo Ore Anteprima - {mese_sel}")
-    col_metrics = st.columns(len(medici_attuali))
-    for i, m in enumerate(medici_attuali):
-        ore_m = df_ore[df_ore["Medico"] == m]["Ore Totali"].values[0]
-        col_metrics[i].metric(label=f"Ore {m}", value=f"{ore_m} h")
-    
-    st.markdown(f"""
-        <div style="background-color:#1E3A8A; padding:15px; border-radius:10px; text-align:center; border: 1px solid #3B82F6;">
-            <h3 style="color:#BFDBFE; margin:0; font-size:18px; font-weight:normal;">Totale Ore Complessivo Presidio</h3>
-            <p style="color:white; font-size:42px; font-weight:bold; margin:0;">{totale_mensile} h</p>
-        </div>
-    """, unsafe_allow_html=True)
