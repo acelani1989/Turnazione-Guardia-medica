@@ -34,8 +34,7 @@ if 'lista_medici' not in st.session_state:
 
 with st.sidebar:
     st.header("⚙️ CONFIGURAZIONE")
-    # Aggiungiamo un'opzione vuota all'inizio della lista per permettere di sbiancare le celle
-    opzioni_medici = [""] + st.session_state.lista_medici
+    medici_attuali = st.multiselect("Medici in servizio", options=st.session_state.lista_medici, default=st.session_state.lista_medici)
     anno_sel = st.number_input("Anno", 2024, 2030, 2026)
     mesi_ita = ["GENNAIO", "FEBBRAIO", "MARZO", "APRILE", "MAGGIO", "GIUGNO", "LUGLIO", "AGOSTO", "SETTEMBRE", "OTTOBRE", "NOVEMBRE", "DICEMBRE"]
     mese_sel = st.selectbox("Mese", mesi_ita, index=datetime.now().month - 1)
@@ -67,14 +66,13 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
         prefix = "** " if is_f else ("* " if is_p else "")
         label = f"{prefix}{d} {ita_g[wd]} {f_n}"
         
-        # Inizializziamo tutto come stringa vuota invece di None
         rows.append({
-            "GIORNO": str(label), 
-            "P 10-14": str(assegnato) if is_p else "", 
-            "P 14-20": str(assegnato) if is_p else "",
-            "F 08-14": str(assegnato) if is_f else "", 
-            "F 14-20": str(assegnato) if is_f else "", 
-            "NOTT 20-08": str(assegnato) if assegnato else "",
+            "GIORNO": label, 
+            "P 10-14": assegnato if is_p else "", 
+            "P 14-20": assegnato if is_p else "",
+            "F 08-14": assegnato if is_f else "", 
+            "F 14-20": assegnato if is_f else "", 
+            "NOTT 20-08": assegnato,
             "hM": 4 if is_p else (6 if is_f else 0), 
             "hP": 6 if (is_p or is_f) else 0, 
             "hN": 12, 
@@ -83,81 +81,73 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
     st.session_state.db = pd.DataFrame(rows)
 
 if 'db' in st.session_state:
-    # Configuriamo le colonne in modo che il default sia "" e non None
-    column_config = {
-        k: st.column_config.SelectboxColumn(k, options=opzioni_medici, width="medium") 
-        for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]
-    }
+    column_config = {k: st.column_config.SelectboxColumn(k, options=medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
 
-    # Pulizia forzata prima della visualizzazione
-    df_visual = st.session_state.db.copy().fillna("").astype(str)
-    df_visual = df_visual.replace(["None", "nan", "NaN", "None"], "")
+    df_ed = st.data_editor(st.session_state.db, 
+                           column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"), 
+                           column_config=column_config,
+                           hide_index=True, use_container_width=True).fillna("")
 
-    df_ed = st.data_editor(
-        df_visual, 
-        column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"), 
-        column_config=column_config,
-        hide_index=True, 
-        use_container_width=True
-    )
-
-    # Ricalcolo Ore Reattivo
+    # Calcolo Ore
     riepilogo = []
-    medici_reali = [m for m in st.session_state.lista_medici if m != ""]
-    for m in medici_reali:
-        ore = (df_ed[df_ed["P 10-14"]==m]["hM"].astype(float).sum() + 
-               df_ed[df_ed["F 08-14"]==m]["hM"].astype(float).sum() +
-               df_ed[df_ed["P 14-20"]==m]["hP"].astype(float).sum() + 
-               df_ed[df_ed["F 14-20"]==m]["hP"].astype(float).sum() + 
-               df_ed[df_ed["NOTT 20-08"]==m]["hN"].astype(float).sum())
+    for m in medici_attuali:
+        ore = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + df_ed[df_ed["F 08-14"]==m]["hM"].sum() + \
+              df_ed[df_ed["P 14-20"]==m]["hP"].sum() + df_ed[df_ed["F 14-20"]==m]["hP"].sum() + \
+              df_ed[df_ed["NOTT 20-08"]==m]["hN"].sum()
         riepilogo.append({"Medico": m, "Ore Totali": int(ore)})
     df_ore = pd.DataFrame(riepilogo)
 
-    # Pulsanti Download
     c1, c2 = st.columns(2)
     with c1:
         buf_ex = io.BytesIO()
         with pd.ExcelWriter(buf_ex, engine='xlsxwriter') as writer:
-            df_ed.drop(columns=["hM","hP","hN","TIPO"]).to_excel(writer, index=False)
+            df_ed.drop(columns=["hM","hP","hN","TIPO"]).to_excel(writer, index=False, sheet_name='Turni')
+            df_ore.to_excel(writer, index=False, sheet_name='Ore')
         st.download_button("📥 SCARICA EXCEL", buf_ex.getvalue(), "Turni.xlsx", use_container_width=True)
 
     with c2:
         if pdf_ok and st.button("📄 SCARICA PDF", use_container_width=True):
             pdf = FPDF('P', 'mm', 'A4')
             pdf.set_margins(8, 8, 8); pdf.add_page(); pdf.set_font("Arial", 'B', 10)
-            pdf.cell(0, 6, "PCA PORTO EMPEDOCLE", 0, 1, 'C')
+            pdf.cell(0, 6, "PCA PORTO EMPEDOCLE - TURNI E ORE", 0, 1, 'C')
             pdf.cell(0, 6, f"{mese_sel} {anno_sel}", 0, 1, 'C'); pdf.ln(2)
             
             w_g, w_c = 38, 31
             pdf.set_font("Arial", 'B', 7)
-            h_list = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
-            for i, h in enumerate(h_list): pdf.cell(w_g if i==0 else w_c, 6, h, 1, 0, 'C')
+            cols_pdf = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
+            for i, col in enumerate(cols_pdf): pdf.cell(w_g if i==0 else w_c, 6, col, 1, 0, 'C')
             pdf.ln()
             
             pdf.set_font("Arial", '', 6.5)
-            for _, r in df_ed.iterrows():
-                pdf.set_fill_color(220, 220, 220) if r["TIPO"] == "E" else pdf.set_fill_color(255, 255, 255)
-                pdf.cell(w_g, 5.5, str(r["GIORNO"]), 1, 0, 'L', True)
+            # Pulizia forzata per il PDF
+            df_pdf = df_ed.copy().astype(str).replace(['None', 'nan', 'nan '], '')
+            
+            for _, r in df_pdf.iterrows():
+                pdf.set_fill_color(225, 225, 225) if r["TIPO"] == "E" else pdf.set_fill_color(255, 255, 255)
+                pdf.cell(w_g, 5.2, r["GIORNO"], 1, 0, 'L', True)
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-                    # FILTRO ANTI-NONE DEFINITIVO
-                    val = str(r[k]).replace("None", "").replace("nan", "").strip()
-                    pdf.cell(w_c, 5.5, val, 1, 0, 'C', True)
+                    pdf.cell(w_c, 5.2, r[k], 1, 0, 'C', True)
                 pdf.ln()
             
-            pdf.ln(5); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
-            pdf.set_font("Arial", '', 7)
+            pdf.ln(2); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
+            pdf.set_font("Arial", 'B', 7); pdf.cell(50, 6, "MEDICO", 1, 0, 'C'); pdf.cell(30, 6, "ORE", 1, 0, 'C'); pdf.cell(60, 6, "FIRMA", 1, 1, 'C')
             for _, row_o in df_ore.iterrows():
-                pdf.cell(50, 8, f"{row_o['Medico']}: {row_o['Ore Totali']} ore", 1, 0, 'L')
-                pdf.cell(70, 8, " Firma: __________________________", 1, 1, 'L')
-            
+                pdf.set_font("Arial", 'B', 7); pdf.cell(50, 8, str(row_o["Medico"]), 1, 0, 'C')
+                pdf.set_font("Arial", '', 7); pdf.cell(30, 8, str(row_o["Ore Totali"]), 1, 0, 'C'); pdf.cell(60, 8, "", 1, 1, 'C')
             st.download_button("💾 SALVA PDF", pdf.output(dest='S').encode('latin-1'), "Turni.pdf", "application/pdf", use_container_width=True)
 
-    # Riepilogo Ore Ingrandito
+    # --- BOX TOTALE RIVISITATO ---
     st.write("---")
-    tot_h = df_ore['Ore Totali'].sum()
+    st.subheader(f"📊 Riepilogo Ore Anteprima - {mese_sel}")
+    col_metrics = st.columns(len(medici_attuali))
+    for i, m in enumerate(medici_attuali):
+        ore_m = df_ore[df_ore["Medico"] == m]["Ore Totali"].values[0]
+        col_metrics[i].metric(label=f"Ore {m}", value=f"{ore_m} h")
+    
+    totale_mensile = df_ore['Ore Totali'].sum()
     st.markdown(f"""
-        <div style="background-color:#003049; padding:25px; border-radius:15px; text-align:center; border: 3px solid #669bbc;">
-            <p style="color:#669bbc; font-size:22px; font-weight:bold; margin-bottom:0;">TOTALE ORE MENSILI</p>
-            <p style="color:white; font-size:90px; font-weight:bold; margin:0;">{tot_h} <span style="font-size:35px;">ore</span></p>
+        <div style="background-color:#1E3A8A; padding:15px; border-radius:10px; text-align:center; border: 1px solid #3B82F6;">
+            <h3 style="color:#BFDBFE; margin:0; font-size:18px; font-weight:normal;">Totale Ore Complessivo Presidio</h3>
+            <p style="color:white; font-size:42px; font-weight:bold; margin:0;">{totale_mensile} h</p>
         </div>
     """, unsafe_allow_html=True)
