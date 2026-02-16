@@ -29,6 +29,7 @@ def get_festivita(anno):
 st.set_page_config(page_title="Turni PCA Porto Empedocle", layout="wide")
 st.markdown("### PRESIDIO DI CONTINUITA’ ASSISTENZIALE PORTO EMPEDOCLE")
 
+# Inizializzazione pulita
 if 'db' not in st.session_state:
     st.session_state.db = None
 
@@ -64,21 +65,24 @@ if st.button("🚀 GENERA / RESETTA SCHEMA", type="primary", use_container_width
             "GIORNO": f"{prefix}{d} {ita_g[wd]} {f_n}",
             "P 10-14": ass if is_p else "", "P 14-20": ass if is_p else "",
             "F 08-14": ass if is_f else "", "F 14-20": ass if is_f else "",
-            "NOTT 20-08": ass, "hM": 4 if is_p else (6 if is_f else 0),
-            "hP": 6 if (is_p or is_f) else 0, "hN": 12, "T": "E" if (is_f or is_p) else "N"
+            "NOTT 20-08": ass, 
+            "hM": 4 if is_p else (6 if is_f else 0),
+            "hP": 6 if (is_p or is_f) else 0, 
+            "hN": 12, 
+            "FESTIVO": is_f or is_p
         })
     st.session_state.db = pd.DataFrame(rows)
 
 if st.session_state.db is not None:
-    # EDITOR CON FILTRO ANTI-NONE
+    # EDITOR CON OPZIONE VUOTA
     config = {k: st.column_config.SelectboxColumn(k, options=[""] + medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
     
-    # Intercettiamo i dati modificati
+    # Mostriamo l'editor (fillna garantisce che non ci siano None visibili)
     df_ed = st.data_editor(st.session_state.db, 
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
-                           column_config=config, hide_index=True, use_container_width=True)
+                           column_config=config, hide_index=True, use_container_width=True).fillna("")
 
-    # --- CALCOLO ORE E SIDEBAR ---
+    # --- CALCOLO ORE ---
     riepilogo = []
     for m in medici_attuali:
         o = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + df_ed[df_ed["F 08-14"]==m]["hM"].sum() + \
@@ -89,42 +93,52 @@ if st.session_state.db is not None:
 
     with placeholder_sidebar:
         st.write("---")
+        st.subheader("📊 Ore Medici")
         for _, r in df_ore.iterrows(): st.write(f"**{r['M']}**: {r['O']} h")
         st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;border:1px solid #3B82F6;"><p style="color:#BFDBFE;margin:0;font-size:12px;">Totale</p><p style="color:white;font-size:24px;font-weight:bold;margin:0;">{tot} h</p></div>', unsafe_allow_html=True)
 
-    # --- GENERAZIONE PDF "HARD-CLEAN" ---
-    if pdf_ok:
-        if st.button("📄 SCARICA PDF (SISTEMA PULIZIA TOTALE)", use_container_width=True):
+    # --- BOTTONI DOWNLOAD ---
+    c1, c2 = st.columns(2)
+    with c1:
+        buf_ex = io.BytesIO()
+        with pd.ExcelWriter(buf_ex, engine='xlsxwriter') as writer:
+            df_ed.drop(columns=["hM","hP","hN","FESTIVO"]).to_excel(writer, index=False)
+        st.download_button("📥 EXCEL", buf_ex.getvalue(), "Turni.xlsx", use_container_width=True)
+
+    with c2:
+        if pdf_ok and st.button("📄 GENERA PDF PULITO", use_container_width=True, type="secondary"):
             pdf = FPDF('P', 'mm', 'A4'); pdf.set_margins(8, 8, 8); pdf.add_page()
             pdf.set_font("Arial", 'B', 10); pdf.cell(0, 6, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", 0, 1, 'C'); pdf.ln(2)
             
-            # Intestazioni
             w_g, w_c = 38, 31; pdf.set_font("Arial", 'B', 7)
             h_pdf = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
             for i, head in enumerate(h_pdf): pdf.cell(w_g if i==0 else w_c, 6, head, 1, 0, 'C')
             pdf.ln()
 
-            # Righe con filtro atomico per eliminare "None"
+            # CICLO RIGHE PDF CON FILTRO TOTALE
             pdf.set_font("Arial", '', 6.5)
             for _, r in df_ed.iterrows():
-                pdf.set_fill_color(230, 230, 230) if r["T"] == "E" else pdf.set_fill_color(255, 255, 255)
+                # Colore riga per festivi
+                pdf.set_fill_color(235, 235, 235) if r["FESTIVO"] else pdf.set_fill_color(255, 255, 255)
+                
                 pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
                 
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
                     val = str(r[k]).strip()
-                    # FILTRO ATOMICO: se il valore non è uno dei medici selezionati, scrivi VUOTO
-                    if val not in medici_attuali: val = ""
+                    # Se il valore è "None", "nan", "0" o non è un medico, svuota la cella
+                    if val.lower() in ["none", "nan", "0", ""] or val not in medici_attuali:
+                        val = ""
                     pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
                 pdf.ln()
 
-            # Firme e Totale
-            pdf.ln(2); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO E FIRME", 0, 1, 'L')
+            # Riepilogo Firme e Totale
+            pdf.ln(3); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
             for _, ro in df_ore.iterrows():
                 pdf.set_font("Arial", 'B', 7); pdf.cell(50, 7, str(ro["M"]), 1, 0, 'C')
                 pdf.set_font("Arial", '', 7); pdf.cell(30, 7, f"{ro['O']} h", 1, 0, 'C')
-                pdf.cell(60, 7, "", 1, 1, 'C')
+                pdf.cell(60, 7, " Firma: ________________", 1, 1, 'L')
             
             pdf.set_font("Arial", 'B', 8); pdf.cell(50, 7, "TOTALE MENSILE", 1, 0, 'C')
             pdf.cell(30, 7, f"{tot} h", 1, 0, 'C'); pdf.cell(60, 7, "", 1, 1, 'C')
             
-            st.download_button("💾 SALVA FILE PDF", pdf.output(dest='S').encode('latin-1'), f"Turni_{mese_sel}.pdf", "application/pdf", use_container_width=True)
+            st.download_button("💾 SALVA PDF", pdf.output(dest='S').encode('latin-1'), f"Turni_{mese_sel}.pdf", "application/pdf", use_container_width=True)
