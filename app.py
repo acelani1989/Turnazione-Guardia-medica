@@ -32,7 +32,7 @@ def get_festivita(anno):
         (25, 12): "Nat.", (26, 12): "Stef.", (p.day, p.month): "Pasqua", (pp.day, pp.month): "Pasqu."
     }
 
-st.set_page_config(page_title="Turni Guardia Medica", layout="wide")
+st.set_page_config(page_title="Turni Verticale", layout="wide")
 st.markdown("### PRESIDIO DI CONTINUITA’ ASSISTENZIALE PORTO EMPEDOCLE")
 
 if 'db' not in st.session_state: st.session_state.db = pd.DataFrame()
@@ -55,7 +55,7 @@ if st.button("🚀 GENERA SCHEMA", type="primary", use_container_width=True):
         f_name = fest.get((d, idx_m), "")
         is_f = wd == 6 or f_name != ""
         is_p = wd == 5 or (not is_f and ((dt + timedelta(days=1)).weekday() == 6 or ((dt + timedelta(days=1)).day, (dt + timedelta(days=1)).month) in fest))
-        g_str = f"{d} {ita_g[wd]}" + (f" - {f_name}" if f_name else "")
+        g_str = f"{d} {ita_g[wd]}" + (f" {f_name}" if f_name else "")
         rows.append({"GIORNO": g_str, "P 10-14": "", "P 14-20": "", "F 08-14": "", "F 14-20": "", "NOTT 20-08": "", "TIPO": "F" if is_f else ("P" if is_p else "N")})
     st.session_state.db = pd.DataFrame(rows)
 
@@ -76,25 +76,35 @@ if not st.session_state.db.empty:
     c1, c2 = st.columns(2)
     with c1: st.download_button("📥 SCARICA EXCEL", buf_ex.getvalue(), f"Turni_{mese_sel}.xlsx", use_container_width=True)
     with c2:
-        if pdf_ok and st.button("📄 GENERA PDF (PAGINA SINGOLA)", use_container_width=True):
-            pdf = FPDF('L', 'mm', 'A4')
-            pdf.set_margins(10, 5, 10) # Margini: Sinistro 10, Superiore 5, Destro 10
+        if pdf_ok and st.button("📄 GENERA PDF VERTICALE", use_container_width=True):
+            pdf = FPDF('P', 'mm', 'A4') # 'P' per Verticale
+            pdf.set_margins(5, 10, 5) 
             pdf.add_page()
             pdf.set_font("Arial", 'B', 10)
-            pdf.cell(0, 6, "PRESIDIO DI CONTINUITA' ASSISTENZIALE PORTO EMPEDOCLE", 0, 1, 'C')
+            pdf.cell(0, 6, "P.C.A. PORTO EMPEDOCLE", 0, 1, 'C')
             pdf.cell(0, 6, f"TURNI {mese_sel} {anno_sel}", 0, 1, 'C')
-            pdf.ln(1)
-            pdf.set_font("Arial", 'B', 8)
-            cols = ["GIORNO", "PREF 10-14", "PREF 14-20", "FEST 08-14", "FEST 14-20", "NOTT 20-08"]
-            for c in cols: pdf.cell(46, 6, c, 1, 0, 'C')
+            pdf.ln(2)
+            
+            # Calcolo larghezze (Totale 200mm con margini)
+            w_g = 35 # Giorno
+            w_c = 33 # Altre 5 colonne (33*5 = 165) -> Totale 200mm
+            
+            pdf.set_font("Arial", 'B', 7)
+            h = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
+            pdf.cell(w_g, 7, h[0], 1, 0, 'C')
+            for col_name in h[1:]:
+                pdf.cell(w_c, 7, col_name, 1, 0, 'C')
             pdf.ln()
+            
             pdf.set_font("Arial", '', 7)
             for _, r in df_ed.iterrows():
                 if r["TIPO"] == "F": pdf.set_fill_color(255, 199, 206)
                 elif r["TIPO"] == "P": pdf.set_fill_color(255, 235, 156)
                 else: pdf.set_fill_color(255, 255, 255)
-                pdf.cell(46, 5.0, str(r["GIORNO"]), 1, 0, 'L', True) # Altezza riga 5.0mm
+                
+                pdf.cell(w_g, 6.5, str(r["GIORNO"]), 1, 0, 'L', True)
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-                    pdf.cell(46, 5.0, str(r[k]), 1, 0, 'C', True)
+                    pdf.cell(w_c, 6.5, str(r[k])[:10], 1, 0, 'C', True) # Tronca nomi lunghi
                 pdf.ln()
-            st.download_button("💾 SALVA PDF", pdf.output(dest='S').encode('latin-1'), "Turni.pdf", "application/pdf", use_container_width=True)
+            
+            st.download_button("💾 SALVA PDF VERTICALE", pdf.output(dest='S').encode('latin-1'), "Turni_Verticale.pdf", "application/pdf", use_container_width=True)
