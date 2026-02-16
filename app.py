@@ -66,39 +66,59 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
         prefix = "** " if is_f else ("* " if is_p else "")
         label = f"{prefix}{d} {ita_g[wd]} {f_n}"
         
-        # Garantiamo stringhe vuote invece di None in fase di creazione
         rows.append({
             "GIORNO": label, 
             "P 10-14": assegnato if is_p else "", 
             "P 14-20": assegnato if is_p else "",
             "F 08-14": assegnato if is_f else "", 
             "F 14-20": assegnato if is_f else "", 
-            "NOTT 20-08": assegnato if assegnato else "",
+            "NOTT 20-08": assegnato,
             "hM": 4 if is_p else (6 if is_f else 0), 
             "hP": 6 if (is_p or is_f) else 0, 
             "hN": 12, 
             "TIPO": "E" if (is_f or is_p) else "N"
         })
-    st.session_state.db = pd.DataFrame(rows).fillna("")
+    st.session_state.db = pd.DataFrame(rows)
 
 if 'db' in st.session_state:
-    column_config = {k: st.column_config.SelectboxColumn(k, options=medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
+    # --- LA CORREZIONE CHIAVE ---
+    # Usiamo TextColumn o SelectboxColumn assicurandoci che il valore di default sia una stringa vuota
+    column_config = {
+        k: st.column_config.SelectboxColumn(
+            k, 
+            options=medici_attuali,
+            required=False,
+            default="" # Forza il vuoto invece di None
+        ) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]
+    }
 
-    # Visualizzazione editor con pulizia istantanea
-    df_ed = st.data_editor(st.session_state.db, 
-                           column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"), 
-                           column_config=column_config,
-                           hide_index=True, use_container_width=True)
+    # Visualizzazione editor: aggiungiamo astype(str) e replace prima di darlo in pasto all'editor
+    df_for_editor = st.session_state.db.copy().astype(str).replace(["None", "nan", "NaN", "None"], "")
     
-    # Sostituzione forzata di ogni possibile None residuo
-    df_clean = df_ed.copy().astype(str).replace(["None", "nan", "NaN", "<NA>"], "")
+    df_ed = st.data_editor(
+        df_for_editor, 
+        column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"), 
+        column_config=column_config,
+        hide_index=True, 
+        use_container_width=True
+    )
+
+    # Pulizia finale per calcoli e PDF
+    df_clean = df_ed.copy().replace(["None", "nan", ""], "")
 
     # Calcolo Ore
     riepilogo = []
     for m in medici_attuali:
-        ore = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + df_ed[df_ed["F 08-14"]==m]["hM"].sum() + \
-              df_ed[df_ed["P 14-20"]==m]["hP"].sum() + df_ed[df_ed["F 14-20"]==m]["hP"].sum() + \
-              df_ed[df_ed["NOTT 20-08"]==m]["hN"].sum()
+        # Convertiamo le colonne ore in numerico per sicurezza prima della somma
+        hM = pd.to_numeric(df_clean["hM"], errors='coerce').fillna(0)
+        hP = pd.to_numeric(df_clean["hP"], errors='coerce').fillna(0)
+        hN = pd.to_numeric(df_clean["hN"], errors='coerce').fillna(0)
+        
+        ore = df_clean[df_clean["P 10-14"]==m]["hM"].astype(float).sum() + \
+              df_clean[df_clean["F 08-14"]==m]["hM"].astype(float).sum() + \
+              df_clean[df_clean["P 14-20"]==m]["hP"].astype(float).sum() + \
+              df_clean[df_clean["F 14-20"]==m]["hP"].astype(float).sum() + \
+              df_clean[df_clean["NOTT 20-08"]==m]["hN"].astype(float).sum()
         riepilogo.append({"Medico": m, "Ore Totali": int(ore)})
     df_ore = pd.DataFrame(riepilogo)
 
@@ -126,18 +146,17 @@ if 'db' in st.session_state:
             for _, r in df_clean.iterrows():
                 pdf.set_fill_color(200, 200, 200) if r["TIPO"] == "E" else pdf.set_fill_color(255, 255, 255)
                 pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
-                
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-                    # Pulizia estrema pre-stampa
-                    txt = r[k] if (r[k] and r[k] != "None" and r[k] != "") else ""
-                    pdf.cell(w_c, 5.2, txt, 1, 0, 'C', True)
+                    val = str(r[k]) if (r[k] and str(r[k]).strip().lower() != "none" and str(r[k]) != "nan") else ""
+                    pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
                 pdf.ln()
             
-            pdf.ln(2); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME DI ACCETTAZIONE", 0, 1, 'L')
-            pdf.set_font("Arial", 'B', 7); pdf.cell(50, 6, "MEDICO", 1, 0, 'C'); pdf.cell(30, 6, "ORE TOTALI", 1, 0, 'C'); pdf.cell(60, 6, "FIRMA", 1, 1, 'C')
+            pdf.ln(2); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
+            pdf.set_font("Arial", 'B', 7); pdf.cell(50, 6, "MEDICO", 1, 0, 'C'); pdf.cell(30, 6, "ORE", 1, 0, 'C'); pdf.cell(60, 6, "FIRMA", 1, 1, 'C')
             for _, row_o in df_ore.iterrows():
-                pdf.set_font("Arial", 'B', 7); pdf.cell(50, 8, str(row_o["Medico"]), 1, 0, 'C')
-                pdf.set_font("Arial", '', 7); pdf.cell(30, 8, str(row_o["Ore Totali"]), 1, 0, 'C'); pdf.cell(60, 8, "", 1, 1, 'C')
+                pdf.cell(50, 8, str(row_o["Medico"]), 1, 0, 'C')
+                pdf.cell(30, 8, str(row_o["Ore Totali"]), 1, 0, 'C')
+                pdf.cell(60, 8, "", 1, 1, 'C')
             st.download_button("💾 SALVA PDF", pdf.output(dest='S').encode('latin-1'), "Turni.pdf", "application/pdf", use_container_width=True)
 
     # --- ANTEPRIMA ORE ---
