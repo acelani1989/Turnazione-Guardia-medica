@@ -34,7 +34,7 @@ if 'lista_medici' not in st.session_state:
 
 with st.sidebar:
     st.header("⚙️ CONFIGURAZIONE")
-    medici_attuali = st.multiselect("Medici in servizio", options=st.session_state.lista_medici, default=st.session_state.lista_medici)
+    medici_attuali = [""] + st.session_state.lista_medici # Aggiunta opzione vuota
     anno_sel = st.number_input("Anno", 2024, 2030, 2026)
     mesi_ita = ["GENNAIO", "FEBBRAIO", "MARZO", "APRILE", "MAGGIO", "GIUGNO", "LUGLIO", "AGOSTO", "SETTEMBRE", "OTTOBRE", "NOVEMBRE", "DICEMBRE"]
     mese_sel = st.selectbox("Mese", mesi_ita, index=datetime.now().month - 1)
@@ -66,13 +66,14 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
         prefix = "** " if is_f else ("* " if is_p else "")
         label = f"{prefix}{d} {ita_g[wd]} {f_n}"
         
+        # CREAZIONE RIGIDA: Usiamo stringhe vuote "" invece di valori nulli
         rows.append({
-            "GIORNO": label, 
-            "P 10-14": assegnato if is_p else "", 
-            "P 14-20": assegnato if is_p else "",
-            "F 08-14": assegnato if is_f else "", 
-            "F 14-20": assegnato if is_f else "", 
-            "NOTT 20-08": assegnato,
+            "GIORNO": str(label), 
+            "P 10-14": str(assegnato) if is_p else "", 
+            "P 14-20": str(assegnato) if is_p else "",
+            "F 08-14": str(assegnato) if is_f else "", 
+            "F 14-20": str(assegnato) if is_f else "", 
+            "NOTT 20-08": str(assegnato),
             "hM": 4 if is_p else (6 if is_f else 0), 
             "hP": 6 if (is_p or is_f) else 0, 
             "hN": 12, 
@@ -81,59 +82,56 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
     st.session_state.db = pd.DataFrame(rows)
 
 if 'db' in st.session_state:
-    # --- LA CORREZIONE CHIAVE ---
-    # Usiamo TextColumn o SelectboxColumn assicurandoci che il valore di default sia una stringa vuota
+    # Configurazione colonne con menu a tendina che include lo spazio vuoto
     column_config = {
-        k: st.column_config.SelectboxColumn(
-            k, 
-            options=medici_attuali,
-            required=False,
-            default="" # Forza il vuoto invece di None
-        ) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]
+        k: st.column_config.SelectboxColumn(k, options=medici_attuali, width="medium") 
+        for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]
     }
 
-    # Visualizzazione editor: aggiungiamo astype(str) e replace prima di darlo in pasto all'editor
-    df_for_editor = st.session_state.db.copy().astype(str).replace(["None", "nan", "NaN", "None"], "")
-    
+    # Visualizzazione editor: trasformazione preventiva in stringhe pure
+    df_visual = st.session_state.db.copy().astype(str)
+    for col in df_visual.columns:
+        df_visual[col] = df_visual[col].apply(lambda x: "" if x in ["None", "nan", "NaN", "null"] else x)
+
     df_ed = st.data_editor(
-        df_for_editor, 
+        df_visual, 
         column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"), 
         column_config=column_config,
         hide_index=True, 
         use_container_width=True
     )
 
-    # Pulizia finale per calcoli e PDF
-    df_clean = df_ed.copy().replace(["None", "nan", ""], "")
-
-    # Calcolo Ore
+    # Calcolo Ore (convertendo i pesi orari in numeri)
     riepilogo = []
-    for m in medici_attuali:
-        # Convertiamo le colonne ore in numerico per sicurezza prima della somma
-        hM = pd.to_numeric(df_clean["hM"], errors='coerce').fillna(0)
-        hP = pd.to_numeric(df_clean["hP"], errors='coerce').fillna(0)
-        hN = pd.to_numeric(df_clean["hN"], errors='coerce').fillna(0)
+    medici_lista = [m for m in medici_attuali if m != ""]
+    for m in medici_lista:
+        mask_p1 = (df_ed["P 10-14"] == m)
+        mask_p2 = (df_ed["P 14-20"] == m)
+        mask_f1 = (df_ed["F 08-14"] == m)
+        mask_f2 = (df_ed["F 14-20"] == m)
+        mask_n = (df_ed["NOTT 20-08"] == m)
         
-        ore = df_clean[df_clean["P 10-14"]==m]["hM"].astype(float).sum() + \
-              df_clean[df_clean["F 08-14"]==m]["hM"].astype(float).sum() + \
-              df_clean[df_clean["P 14-20"]==m]["hP"].astype(float).sum() + \
-              df_clean[df_clean["F 14-20"]==m]["hP"].astype(float).sum() + \
-              df_clean[df_clean["NOTT 20-08"]==m]["hN"].astype(float).sum()
-        riepilogo.append({"Medico": m, "Ore Totali": int(ore)})
+        ore_tot = (df_ed.loc[mask_p1, "hM"].astype(float).sum() + 
+                   df_ed.loc[mask_f1, "hM"].astype(float).sum() +
+                   df_ed.loc[mask_p2, "hP"].astype(float).sum() +
+                   df_ed.loc[mask_f2, "hP"].astype(float).sum() +
+                   df_ed.loc[mask_n, "hN"].astype(float).sum())
+        riepilogo.append({"Medico": m, "Ore Totali": int(ore_tot)})
     df_ore = pd.DataFrame(riepilogo)
 
+    # --- ZONA DOWNLOAD ---
     c1, c2 = st.columns(2)
     with c1:
         buf_ex = io.BytesIO()
         with pd.ExcelWriter(buf_ex, engine='xlsxwriter') as writer:
-            df_clean.drop(columns=["hM","hP","hN","TIPO"]).to_excel(writer, index=False)
+            df_ed.drop(columns=["hM","hP","hN","TIPO"]).to_excel(writer, index=False)
         st.download_button("📥 SCARICA EXCEL", buf_ex.getvalue(), "Turni.xlsx", use_container_width=True)
 
     with c2:
         if pdf_ok and st.button("📄 SCARICA PDF", use_container_width=True):
             pdf = FPDF('P', 'mm', 'A4')
             pdf.set_margins(8, 8, 8); pdf.add_page(); pdf.set_font("Arial", 'B', 10)
-            pdf.cell(0, 6, "PCA PORTO EMPEDOCLE - TURNI E ORE", 0, 1, 'C')
+            pdf.cell(0, 6, "PCA PORTO EMPEDOCLE", 0, 1, 'C')
             pdf.cell(0, 6, f"{mese_sel} {anno_sel}", 0, 1, 'C'); pdf.ln(2)
             
             w_g, w_c = 38, 31
@@ -143,34 +141,28 @@ if 'db' in st.session_state:
             pdf.ln()
             
             pdf.set_font("Arial", '', 6.5)
-            for _, r in df_clean.iterrows():
+            for _, r in df_ed.iterrows():
                 pdf.set_fill_color(200, 200, 200) if r["TIPO"] == "E" else pdf.set_fill_color(255, 255, 255)
-                pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
+                pdf.cell(w_g, 5.2, r["GIORNO"], 1, 0, 'L', True)
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-                    val = str(r[k]) if (r[k] and str(r[k]).strip().lower() != "none" and str(r[k]) != "nan") else ""
-                    pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
+                    val = r[k]
+                    # FILTRO PDF DEFINITIVO
+                    testo = str(val) if val not in ["None", "nan", "", None] else ""
+                    pdf.cell(w_c, 5.2, testo, 1, 0, 'C', True)
                 pdf.ln()
             
-            pdf.ln(2); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
-            pdf.set_font("Arial", 'B', 7); pdf.cell(50, 6, "MEDICO", 1, 0, 'C'); pdf.cell(30, 6, "ORE", 1, 0, 'C'); pdf.cell(60, 6, "FIRMA", 1, 1, 'C')
+            pdf.ln(4); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
             for _, row_o in df_ore.iterrows():
-                pdf.cell(50, 8, str(row_o["Medico"]), 1, 0, 'C')
-                pdf.cell(30, 8, str(row_o["Ore Totali"]), 1, 0, 'C')
-                pdf.cell(60, 8, "", 1, 1, 'C')
+                pdf.cell(50, 8, f"{row_o['Medico']}: {row_o['Ore Totali']} ore", 1, 0, 'L')
+                pdf.cell(60, 8, " Firma: ___________________", 1, 1, 'L')
             st.download_button("💾 SALVA PDF", pdf.output(dest='S').encode('latin-1'), "Turni.pdf", "application/pdf", use_container_width=True)
 
-    # --- ANTEPRIMA ORE ---
+    # --- TOTALE ORE GIGANTE ---
     st.write("---")
-    st.subheader(f"📊 Riepilogo Ore Anteprima - {mese_sel}")
-    col_metrics = st.columns(len(medici_attuali))
-    for i, m in enumerate(medici_attuali):
-        ore_m = df_ore[df_ore["Medico"] == m]["Ore Totali"].values[0]
-        col_metrics[i].metric(label=f"Ore {m}", value=f"{ore_m} h")
-    
     totale_mensile = df_ore['Ore Totali'].sum()
     st.markdown(f"""
-        <div style="background-color:#1E3A8A; padding:20px; border-radius:10px; text-align:center;">
-            <h1 style="color:white; margin:0; font-size:24px;">TOTALE ORE COMPLESSIVE PRESIDIO</h1>
-            <p style="color:#60A5FA; font-size:72px; font-weight:bold; margin:0;">{totale_mensile} h</p>
+        <div style="background-color:#003366; padding:30px; border-radius:15px; border: 2px solid #00c0f0; text-align:center;">
+            <p style="color:#00c0f0; font-size:20px; font-weight:bold; margin-bottom:5px;">TOTALE ORE MENSILI PRESIDIO</p>
+            <p style="color:white; font-size:80px; font-weight:bold; margin:0;">{totale_mensile} <span style="font-size:30px;">ore</span></p>
         </div>
     """, unsafe_allow_html=True)
