@@ -70,9 +70,10 @@ with st.sidebar:
     if st.session_state.db is not None:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            # Sostituzione di None/NaN con stringa vuota per l'export
-            df_export = st.session_state.db.fillna("")
-            df_export.to_excel(writer, sheet_name='Turni', index=False)
+            # Sostituzione preventiva per export
+            df_export = st.session_state.db.copy()
+            df_export = df_export.replace(["None", "nan", "NaN", "0", 0], "")
+            df_export.fillna("").to_excel(writer, sheet_name='Turni', index=False)
             pd.DataFrame({"ListaMedici": st.session_state.medici_lista}).to_excel(writer, sheet_name='Anagrafica', index=False)
         
         st.download_button(label="📤 SCARICA BACKUP", data=buffer.getvalue(), 
@@ -83,15 +84,15 @@ with st.sidebar:
     uploaded_file = st.file_uploader("📥 IMPORTA BACKUP", type=["xlsx"], label_visibility="collapsed")
     if uploaded_file is not None:
         try:
-            st.session_state.db = pd.read_excel(uploaded_file, sheet_name='Turni').fillna("")
+            st.session_state.db = pd.read_excel(uploaded_file, sheet_name='Turni').replace(["None", "nan", "NaN", "0", 0], "").fillna("")
             df_medici = pd.read_excel(uploaded_file, sheet_name='Anagrafica')
             st.session_state.medici_lista = df_medici["ListaMedici"].tolist()
             st.success("Backup caricato!")
             st.rerun()
         except:
-            st.error("Errore nel caricamento del file.")
+            st.error("Errore caricamento.")
 
-# --- 4. LOGICA GENERAZIONE TURNI ---
+# --- 4. GENERAZIONE AUTOMATICA ---
 if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
     gg = calendar.monthrange(anno_sel, idx_m)[1]
@@ -129,9 +130,9 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
         })
     st.session_state.db = pd.DataFrame(rows).fillna("")
 
-# --- 5. EDITOR E CALCOLO ORE ---
+# --- 5. EDITOR DATI ---
 if st.session_state.db is not None:
-    # Pulizia totale prima di mostrare l'editor (copre le scritte None/Nan)
+    # PULIZIA TOTALE: Sovrascrive None/nan con stringa bianca vuota
     st.session_state.db = st.session_state.db.replace(["None", "nan", "NaN", "0", 0], "")
     st.session_state.db = st.session_state.db.fillna("")
     
@@ -141,6 +142,7 @@ if st.session_state.db is not None:
                            column_config=config, hide_index=True, use_container_width=True)
     st.session_state.db = df_ed
 
+    # Calcolo Ore
     riepilogo = []
     for m in st.session_state.medici_lista:
         o_pref = df_ed[(df_ed["P 10-14"] == m) & (df_ed["TIPO"] == "PREF")].shape[0] * 4
@@ -158,7 +160,7 @@ if st.session_state.db is not None:
         for _, r in df_ore.iterrows(): st.write(f"**{r['Medico']}**: {r['Ore']} h")
         st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:22px;font-weight:bold;margin:0;">{tot_mensile} h</p></div>', unsafe_allow_html=True)
 
-    # --- 6. PDF GENERATION (SOLO SCARICA) ---
+    # --- 6. PDF GENERATION (PULIZIA RIGOROSA) ---
     st.write("---")
     
     pdf = FPDF('P', 'mm', 'A4')
@@ -181,22 +183,21 @@ if st.session_state.db is not None:
         pdf.set_fill_color(235, 235, 235) if fill else pdf.set_fill_color(255, 255, 255)
         
         # Pulizia Giorno
-        giorno_txt = str(r["GIORNO"]) if (pd.notna(r["GIORNO"]) and str(r["GIORNO"]).lower() != "nan") else ""
-        pdf.cell(w_g, 5.2, giorno_txt, border=1, fill=True)
+        g_val = str(r["GIORNO"]) if (pd.notna(r["GIORNO"]) and str(r["GIORNO"]).lower() != "nan") else ""
+        pdf.cell(w_g, 5.2, g_val, border=1, fill=True)
         
-        # Pulizia Turni (Copre scritte verdi/None con bianco)
-        for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-            val_raw = r[k]
-            if pd.isna(val_raw) or str(val_raw).strip().lower() in ["none", "nan", "", "0", "0.0"]:
-                val_pdf = ""
+        # Pulizia Turni: SOVRASCRIVE "None" CON BIANCO
+        for col in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
+            v_raw = r[col]
+            if pd.isna(v_raw) or str(v_raw).strip().lower() in ["none", "nan", "", "0", "0.0"]:
+                v_clean = ""
             else:
-                val_pdf = str(val_raw)
-            pdf.cell(w_c, 5.2, val_pdf, border=1, align='C', fill=True)
+                v_clean = str(v_raw)
+            pdf.cell(w_c, 5.2, v_clean, border=1, align='C', fill=True)
         pdf.ln()
 
     # Firme
-    pdf.ln(4)
-    pdf.set_font("helvetica", 'B', 8)
+    pdf.ln(4); pdf.set_font("helvetica", 'B', 8)
     pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", new_x="LMARGIN", new_y="NEXT")
     for _, ro in df_ore.iterrows():
         pdf.set_font("helvetica", 'B', 7)
@@ -204,18 +205,18 @@ if st.session_state.db is not None:
         pdf.cell(25, 7, f"{ro['Ore']} h", border=1, align='C')
         pdf.cell(65, 7, " Firma: ________________", border=1, align='L', new_x="LMARGIN", new_y="NEXT")
     
-    # Totale
+    # Riga Totale
     pdf.set_font("helvetica", 'B', 8); pdf.set_fill_color(230, 230, 250)
     pdf.cell(45, 7, "TOTALE MENSILE", border=1, align='C', fill=True)
     pdf.cell(25, 7, f"{tot_mensile} h", border=1, align='C', fill=True)
     pdf.cell(65, 7, "", border=1, fill=True)
 
-    pdf_output = bytes(pdf.output())
+    pdf_bytes = bytes(pdf.output())
     
-    # Solo il tasto scarica, niente anteprima
+    # TASTO FINALE
     st.download_button(
         label="💾 SCARICA PDF FINALE", 
-        data=pdf_output, 
+        data=pdf_bytes, 
         file_name=f"Turni_{mese_sel}.pdf", 
         mime="application/pdf", 
         use_container_width=True
