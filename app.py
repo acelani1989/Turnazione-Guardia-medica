@@ -25,7 +25,7 @@ def get_festivita(anno):
         giorno = ((h + l - 7 * m + 114) % 31) + 1
         return datetime(y, mese, giorno)
     p = pasqua(anno); pp = p + timedelta(days=1)
-    return {(1,1):"Capod.",(6,1):"Epif.",(25,2):"Patr.",(25,4):"Lib.",(1,5):"Lav.",(2,6):"Rep.",(15,8):"Ferr.",(1,11):"Ognis.",(8,12):"Immac.",(25,12):"Nat.",(26,12):"Stef.",(p.day,p.month):"Pasqua",(pp.day,pp.month):"Pasqu."}
+    return {(1,1):"Capodanno",(6,1):"Epifania",(25,2):"Patrono",(25,4):"Liberazione",(1,5):"Lavoro",(2,6):"Repubblica",(15,8):"Ferragosto",(1,11):"Ognissanti",(8,12):"Immacolata",(25,12):"Natale",(26,12):"S.Stefano",(p.day,p.month):"Pasqua",(pp.day,pp.month):"Pasquetta"}
 
 st.set_page_config(page_title="Turni PCA Porto Empedocle", layout="wide")
 st.markdown("### PRESIDIO DI CONTINUITA’ ASSISTENZIALE PORTO EMPEDOCLE")
@@ -51,11 +51,14 @@ with st.sidebar:
     st.write("---")
     placeholder_sidebar = st.container()
 
+# PULSANTE GENERAZIONE SCHEMA
 if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
     gg = calendar.monthrange(anno_sel, idx_m)[1]
     rows = []
-    ita_g = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]; ven_count = 0
+    # Nomi giorni completi
+    ita_g = ["LUNEDÌ", "MARTEDÌ", "MERCOLEDÌ", "GIOVEDÌ", "VENERDÌ", "SABATO", "DOMENICA"]
+    ven_count = 0
     for d in range(1, gg + 1):
         dt = datetime(anno_sel, idx_m, d); wd = dt.weekday()
         f_n = fest.get((d, idx_m), ""); is_f = wd == 6 or f_n != ""
@@ -67,7 +70,7 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
         elif wd == 4: ven_count += 1; ass = "Celani" if ven_count % 2 != 0 else "Piscopo"
         elif wd in [5, 6]: ass = "Siracusa"
         
-        prefix = "** " if is_f else ("* " if is_p else "")
+        prefix = "** " if is_f else ("* " if is_p else "  ")
         rows.append({
             "GIORNO": f"{prefix}{d} {ita_g[wd]} {f_n}",
             "P 10-14": ass if is_p else "", "P 14-20": ass if is_p else "",
@@ -83,6 +86,7 @@ if st.session_state.db is not None:
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
                            column_config=config, hide_index=True, use_container_width=True)
 
+    # Calcolo Ore
     riepilogo = []
     for m in medici_attuali:
         if not m or m == "": continue
@@ -101,13 +105,13 @@ if st.session_state.db is not None:
     st.write("---")
     col1, col2 = st.columns(2)
     
-    # --- LOGICA PDF CON COLONNE STRETTE ---
-    pdf = FPDF('P', 'mm', 'A4'); pdf.set_margins(10, 10, 10); pdf.add_page()
+    # --- LOGICA PDF CON NOMI COMPLETI E COLONNE OTTIMIZZATE ---
+    pdf = FPDF('P', 'mm', 'A4'); pdf.set_margins(7, 10, 7); pdf.add_page()
     pdf.set_font("Arial", 'B', 10); pdf.cell(0, 6, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", 0, 1, 'C'); pdf.ln(2)
     
-    # Nuove larghezze: Totale = 190mm circa (A4 con margini)
-    w_g = 30  # Giorno più stretto
-    w_c = 32  # Colonne turni regolate
+    # Ricalibrazione larghezze: A4 utile = 196mm circa
+    w_g = 42  # Allargata per "MERCOLEDÌ" + Festività
+    w_c = 30  # Strette per i nomi medici
     
     pdf.set_font("Arial", 'B', 7)
     h_pdf = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
@@ -115,21 +119,24 @@ if st.session_state.db is not None:
         pdf.cell(w_g if i==0 else w_c, 6, head, 1, 0, 'C')
     pdf.ln()
 
-    pdf.set_font("Arial", '', 6) # Carattere leggermente più piccolo
+    pdf.set_font("Arial", '', 6.5)
     for _, r in df_ed.iterrows():
         bg_color = (235, 235, 235) if "*" in str(r["GIORNO"]) else (255, 255, 255)
         pdf.set_fill_color(*bg_color)
-        pdf.cell(w_g, 5, str(r["GIORNO"]), 1, 0, 'L', True)
+        
+        # Cella Giorno
+        pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
+        # Celle Turni
         for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
             val = str(r[k]).strip()
             if val.lower() in ["none", "nan", "", "0"]: val = ""
-            pdf.cell(w_c, 5, val, 1, 0, 'C', True)
+            pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
         pdf.ln()
 
     pdf.ln(4); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
     for _, ro in df_ore.iterrows():
-        pdf.set_font("Arial", 'B', 7); pdf.cell(40, 7, str(ro["Medico"]), 1, 0, 'C')
-        pdf.cell(25, 7, f"{ro['Ore Totali']} h", 1, 0, 'C'); pdf.cell(60, 7, " Firma: ________________", 1, 1, 'L')
+        pdf.set_font("Arial", 'B', 7); pdf.cell(45, 7, str(ro["Medico"]), 1, 0, 'C')
+        pdf.cell(25, 7, f"{ro['Ore Totali']} h", 1, 0, 'C'); pdf.cell(65, 7, " Firma: ________________", 1, 1, 'L')
     
     pdf_output = pdf.output(dest='S').encode('latin-1')
 
