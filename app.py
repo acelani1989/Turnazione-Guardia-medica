@@ -29,7 +29,6 @@ def get_festivita(anno):
 st.set_page_config(page_title="Turni PCA Porto Empedocle", layout="wide")
 st.markdown("### PRESIDIO DI CONTINUITA’ ASSISTENZIALE PORTO EMPEDOCLE")
 
-# Inizializzazione sessione
 if 'db' not in st.session_state:
     st.session_state.db = None
 
@@ -53,6 +52,7 @@ if st.button("🚀 GENERA / RESETTA SCHEMA", type="primary", use_container_width
         dt = datetime(anno_sel, idx_m, d); wd = dt.weekday()
         f_n = fest.get((d, idx_m), ""); is_f = wd == 6 or f_n != ""
         is_p = wd == 5 or (not is_f and ((dt + timedelta(days=1)).weekday() == 6 or ((dt + timedelta(days=1)).day, (dt + timedelta(days=1)).month) in fest))
+        
         ass = ""
         if wd in [0, 2]: ass = "Celani"
         elif wd == 1: ass = "Piscopo"
@@ -61,10 +61,14 @@ if st.button("🚀 GENERA / RESETTA SCHEMA", type="primary", use_container_width
         elif wd in [5, 6]: ass = "Siracusa"
         
         prefix = "** " if is_f else ("* " if is_p else "")
+        
+        # LOGICA DI ASSEGNAZIONE PULITA: se non è prefestivo/festivo, le diurne sono vuote ("")
         rows.append({
             "GIORNO": f"{prefix}{d} {ita_g[wd]} {f_n}",
-            "P 10-14": ass if is_p else "", "P 14-20": ass if is_p else "",
-            "F 08-14": ass if is_f else "", "F 14-20": ass if is_f else "",
+            "P 10-14": ass if is_p else "", 
+            "P 14-20": ass if is_p else "",
+            "F 08-14": ass if is_f else "", 
+            "F 14-20": ass if is_f else "", 
             "NOTT 20-08": ass, 
             "hM": 4 if is_p else (6 if is_f else 0),
             "hP": 6 if (is_p or is_f) else 0, 
@@ -74,9 +78,10 @@ if st.button("🚀 GENERA / RESETTA SCHEMA", type="primary", use_container_width
     st.session_state.db = pd.DataFrame(rows)
 
 if st.session_state.db is not None:
-    # EDITOR
+    # EDITOR CON FORZATURA STRINGA VUOTA
     config = {k: st.column_config.SelectboxColumn(k, options=[""] + medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
     
+    # fillna("") assicura che eventuali buchi nel dataframe diventino stringhe vuote invece di None
     df_ed = st.data_editor(st.session_state.db, 
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
                            column_config=config, hide_index=True, use_container_width=True).fillna("")
@@ -84,6 +89,7 @@ if st.session_state.db is not None:
     # CALCOLO ORE
     riepilogo = []
     for m in medici_attuali:
+        if m == "": continue
         o = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + df_ed[df_ed["F 08-14"]==m]["hM"].sum() + \
             df_ed[df_ed["P 14-20"]==m]["hP"].sum() + df_ed[df_ed["F 14-20"]==m]["hP"].sum() + \
             df_ed[df_ed["NOTT 20-08"]==m]["hN"].sum()
@@ -120,7 +126,7 @@ if st.session_state.db is not None:
                 pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
                     val = str(r[k]).strip()
-                    # FILTRO ANTI-NONE DEFINITIVO
+                    # Se il valore è nullo, "None" o non è un medico, resta vuoto
                     if val.lower() in ["none", "nan", "0", ""] or val not in medici_attuali:
                         val = ""
                     pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
