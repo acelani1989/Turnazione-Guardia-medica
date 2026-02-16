@@ -70,6 +70,7 @@ with st.sidebar:
     if st.session_state.db is not None:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            # Sostituzione di None/NaN con stringa vuota per l'export
             df_export = st.session_state.db.fillna("")
             df_export.to_excel(writer, sheet_name='Turni', index=False)
             pd.DataFrame({"ListaMedici": st.session_state.medici_lista}).to_excel(writer, sheet_name='Anagrafica', index=False)
@@ -130,6 +131,8 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
 
 # --- 5. EDITOR E CALCOLO ORE ---
 if st.session_state.db is not None:
+    # Pulizia totale prima di mostrare l'editor (copre le scritte None/Nan)
+    st.session_state.db = st.session_state.db.replace(["None", "nan", "NaN", "0", 0], "")
     st.session_state.db = st.session_state.db.fillna("")
     
     config = {k: st.column_config.SelectboxColumn(k, options=[""] + st.session_state.medici_lista) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
@@ -155,9 +158,8 @@ if st.session_state.db is not None:
         for _, r in df_ore.iterrows(): st.write(f"**{r['Medico']}**: {r['Ore']} h")
         st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:22px;font-weight:bold;margin:0;">{tot_mensile} h</p></div>', unsafe_allow_html=True)
 
-    # --- 6. PDF GENERATION (PULIZIA NONE/NAN) ---
+    # --- 6. PDF GENERATION (SOLO SCARICA) ---
     st.write("---")
-    col1, col2 = st.columns(2)
     
     pdf = FPDF('P', 'mm', 'A4')
     pdf.set_margins(7, 10, 7)
@@ -179,22 +181,20 @@ if st.session_state.db is not None:
         pdf.set_fill_color(235, 235, 235) if fill else pdf.set_fill_color(255, 255, 255)
         
         # Pulizia Giorno
-        giorno_txt = str(r["GIORNO"]) if pd.notna(r["GIORNO"]) else ""
+        giorno_txt = str(r["GIORNO"]) if (pd.notna(r["GIORNO"]) and str(r["GIORNO"]).lower() != "nan") else ""
         pdf.cell(w_g, 5.2, giorno_txt, border=1, fill=True)
         
-        # Pulizia Colonne Turni
+        # Pulizia Turni (Copre scritte verdi/None con bianco)
         for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
             val_raw = r[k]
-            # Se il valore è nullo, "None", "nan" o stringa vuota, stampa stringa bianca
-            if pd.isna(val_raw) or str(val_raw).strip().lower() in ["none", "nan", ""]:
+            if pd.isna(val_raw) or str(val_raw).strip().lower() in ["none", "nan", "", "0", "0.0"]:
                 val_pdf = ""
             else:
                 val_pdf = str(val_raw)
-                
             pdf.cell(w_c, 5.2, val_pdf, border=1, align='C', fill=True)
         pdf.ln()
 
-    # Sezione Firme
+    # Firme
     pdf.ln(4)
     pdf.set_font("helvetica", 'B', 8)
     pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", new_x="LMARGIN", new_y="NEXT")
@@ -204,7 +204,7 @@ if st.session_state.db is not None:
         pdf.cell(25, 7, f"{ro['Ore']} h", border=1, align='C')
         pdf.cell(65, 7, " Firma: ________________", border=1, align='L', new_x="LMARGIN", new_y="NEXT")
     
-    # Totale Mensile
+    # Totale
     pdf.set_font("helvetica", 'B', 8); pdf.set_fill_color(230, 230, 250)
     pdf.cell(45, 7, "TOTALE MENSILE", border=1, align='C', fill=True)
     pdf.cell(25, 7, f"{tot_mensile} h", border=1, align='C', fill=True)
@@ -212,15 +212,11 @@ if st.session_state.db is not None:
 
     pdf_output = bytes(pdf.output())
     
-    with col1:
-        if st.button("👁️ ANTEPRIMA PDF", use_container_width=True):
-            b64 = base64.b64encode(pdf_output).decode('utf-8')
-            st.markdown(f'<object data="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="800px"></object>', unsafe_allow_html=True)
-    with col2:
-        st.download_button(
-            label="💾 SCARICA PDF", 
-            data=pdf_output, 
-            file_name=f"Turni_{mese_sel}.pdf", 
-            mime="application/pdf", 
-            use_container_width=True
-        )
+    # Solo il tasto scarica, niente anteprima
+    st.download_button(
+        label="💾 SCARICA PDF FINALE", 
+        data=pdf_output, 
+        file_name=f"Turni_{mese_sel}.pdf", 
+        mime="application/pdf", 
+        use_container_width=True
+    )
