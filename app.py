@@ -90,11 +90,11 @@ if 'db' in st.session_state:
             pdf.cell(0, 6, f"{mese_sel} {anno_sel}", 0, 1, 'C')
             pdf.ln(2)
             
-            # Tabella Turni
+            # Tabella Turni Principale
             w_g, w_c = 38, 31
             pdf.set_font("Arial", 'B', 7)
-            h = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
-            for i, col in enumerate(h): pdf.cell(w_g if i==0 else w_c, 6, col, 1, 0, 'C')
+            headers = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
+            for i, h in enumerate(headers): pdf.cell(w_g if i==0 else w_c, 6, h, 1, 0, 'C')
             pdf.ln()
             
             pdf.set_font("Arial", '', 6.5)
@@ -106,28 +106,32 @@ if 'db' in st.session_state:
                     pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
                 pdf.ln()
             
-            # Legenda e Riepilogo Ore
-            pdf.ln(2)
+            # Legenda
+            pdf.ln(1)
             pdf.set_font("Arial", 'I', 6)
             pdf.cell(0, 4, "Legenda: ** Festivo | * Prefestivo (Sfondo grigio)", 0, 1, 'L')
             
+            # Riepilogo Ore con Colonne Firma
             pdf.ln(2)
             pdf.set_font("Arial", 'B', 8)
-            pdf.cell(0, 5, "RIEPILOGO ORE TOTALI PER MEDICO", 0, 1, 'L')
+            pdf.cell(0, 5, "RIEPILOGO ORE E FIRME DI ACCETTAZIONE", 0, 1, 'L')
+            
+            # Intestazione Tabella Riepilogo
             pdf.set_font("Arial", 'B', 7)
-            pdf.cell(50, 5, "MEDICO", 1, 0, 'C'); pdf.cell(30, 5, "ORE", 1, 1, 'C')
+            pdf.cell(50, 6, "MEDICO", 1, 0, 'C')
+            pdf.cell(30, 6, "ORE TOTALI", 1, 0, 'C')
+            pdf.cell(60, 6, "FIRMA PER ACCETTAZIONE", 1, 1, 'C')
             
+            # Righe Medici
             for _, row_o in df_ore.iterrows():
-                pdf.set_font("Arial", 'B', 7) 
-                pdf.cell(50, 5, str(row_o["Medico"]), 1, 0, 'C')
-                pdf.set_font("Arial", '', 7) 
-                pdf.cell(30, 5, str(row_o["Ore Totali"]), 1, 1, 'C')
-            
-            # --- SEZIONE FIRMA SOLO MEDICO ---
-            pdf.ln(10)
-            pdf.set_font("Arial", 'B', 8)
-            pdf.cell(0, 5, "Firma del Medico per accettazione", 0, 1, 'L')
-            pdf.ln(5)
-            pdf.cell(0, 5, "_________________________________", 0, 1, 'L')
+                # Nome in grassetto
+                pdf.set_font("Arial", 'B', 7)
+                pdf.cell(50, 8, str(row_o["Medico"]), 1, 0, 'C')
+                # Ore normali
+                pdf.set_font("Arial", '', 7)
+                pdf.cell(30, 8, str(row_o["Ore Totali"]), 1, 0, 'C')
+                # Cella per la firma
+                pdf.cell(60, 8, "", 1, 1, 'C')
             
             st.download_button("💾 SALVA PDF FINALE", pdf.output(dest='S').encode('latin-1'), "Turni_e_Ore.pdf", "application/pdf", use_container_width=True)
+            
