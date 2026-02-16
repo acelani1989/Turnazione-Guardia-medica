@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
 import calendar
-import json
+import io
 from datetime import datetime, timedelta
+# Nota: Per il PDF è necessaria la libreria fpdf (pip install fpdf)
+from fpdf import FPDF
 
 # --- 1. LOGICA CALENDARIO E FESTIVITÀ ---
 def get_festivita(anno):
-    """Calcola le festività nazionali italiane e il Santo Patrono."""
     def calcola_pasqua(y):
         a, b, c = y % 19, y // 100, y % 100
         d, e = b // 4, b % 4
@@ -22,14 +23,11 @@ def get_festivita(anno):
 
     p = calcola_pasqua(anno)
     pp = p + timedelta(days=1)
-    
     return {
-        (1, 1): "Capodanno", (6, 1): "Epifania", 
-        (25, 2): "S. Patrono", 
-        (25, 4): "Liberazione", (1, 5): "Festa Lavoro", (2, 6): "Festa Repubblica", 
-        (15, 8): "Ferragosto", (1, 11): "Ognissanti", (8, 12): "Immacolata", 
-        (25, 12): "Natale", (26, 12): "S. Stefano", 
-        (p.day, p.month): "Pasqua", (pp.day, pp.month): "Pasquetta"
+        (1, 1): "Capodanno", (6, 1): "Epifania", (25, 2): "S. Patrono",
+        (25, 4): "Liberazione", (1, 5): "Festa Lavoro", (2, 6): "Festa Repubblica",
+        (15, 8): "Ferragosto", (1, 11): "Ognissanti", (8, 12): "Immacolata",
+        (25, 12): "Natale", (26, 12): "S. Stefano", (p.day, p.month): "Pasqua", (pp.day, pp.month): "Pasquetta"
     }
 
 def is_festivo(dt, fest):
@@ -40,100 +38,106 @@ def is_prefestivo(dt, fest):
     return dt.weekday() == 5 or is_festivo(domani, fest)
 
 def get_giorno_ita(dt):
-    giorni = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
-    return giorni[dt.weekday()]
+    return ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"][dt.weekday()]
 
 # --- 2. CONFIGURAZIONE UI ---
-st.set_page_config(page_title="Turni Guardia Medica", layout="wide")
+st.set_page_config(page_title="Generatore Turni C.A.", layout="wide")
+st.title("⚕️ Generatore Turni Porto Empedocle")
 
 if 'db_turni' not in st.session_state:
     st.session_state.db_turni = pd.DataFrame()
 if 'medici' not in st.session_state:
     st.session_state.medici = ["Piscopo", "Celani", "Lombardo", "Siracusa"]
 
-# --- 3. SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ Impostazioni")
+    st.header("⚙️ Parametri")
     anno_sel = st.number_input("Anno", min_value=2020, max_value=2035, value=2026)
     mesi_ita = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", 
                 "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
-    mese_nome = st.selectbox("Mese", mesi_ita, index=2) # Default Marzo
+    mese_nome = st.selectbox("Mese", mesi_ita, index=2)
     mese_idx = mesi_ita.index(mese_nome) + 1
 
-    st.divider()
-    st.write("**Legenda Orari:**")
-    st.write("- **Festivo:** 08-14 / 14-20 / 20-08")
-    st.write("- **Prefestivo:** 10-14 / 14-20 / 20-08")
-    st.write("- **Feriale:** 20-08")
-
-# --- 4. GENERAZIONE TURNI ---
-st.title(f"Pianificazione Turni: {mese_nome} {anno_sel}")
-
-if st.button("🚀 Genera Nuova Tabella Mensile", type="primary"):
+# --- 3. GENERAZIONE SECONDO SCHEMA ALLEGATO ---
+if st.button("🚀 Genera Schema Turni", type="primary"):
     fest = get_festivita(anno_sel)
     gg_mese = calendar.monthrange(anno_sel, mese_idx)[1]
     rows = []
 
     for d in range(1, gg_mese + 1):
         dt = datetime(anno_sel, mese_idx, d)
-        
-        fest_label = fest.get((d, mese_idx))
         festivo = is_festivo(dt, fest)
         prefestivo = is_prefestivo(dt, fest)
-        nome_giorno = get_giorno_ita(dt)
         
+        # Inizializzazione colonne come da schema 
+        m_10_14, p_14_20, m_08_14, f_14_20, n_20_08 = "---", "---", "---", "---", "Libero"
+        om, op, on = 0, 0, 12
+
         if festivo:
-            tipo = f"FESTIVO ({fest_label})" if fest_label else "DOMENICA"
-            h_m, h_p, o_m, o_p = "08:00-14:00", "14:00-20:00", 6, 6
-            m, p = "Libero", "Libero"
+            m_08_14, f_14_20 = "Libero", "Libero"
+            om, op = 6, 6
         elif prefestivo:
-            tipo = "PREFESTIVO"
-            h_m, h_p, o_m, o_p = "10:00-14:00", "14:00-20:00", 4, 6
-            m, p = "Libero", "Libero"
-        else:
-            tipo = "FERIALE"
-            h_m, h_p, o_m, o_p = "---", "---", 0, 0
-            m, p = "---", "---"
+            m_10_14, p_14_20 = "Libero", "Libero"
+            om, op = 4, 6
 
         rows.append({
-            "Giorno": d,
-            "Data": f"{d} {nome_giorno}",
-            "Tipo": tipo,
-            "Mattina": m,
-            "Pomeriggio": p,
-            "Notte": "Libero",
-            "OreM": o_m, "OreP": o_p, "OreN": 12
+            "GIORNO": f"{d} {get_giorno_ita(dt).upper()}",
+            "PREFESTIVO 10-14": m_10_14,
+            "PREFESTIVO 14-20": p_14_20,
+            "FESTIVO 08-14": m_08_14,
+            "FESTIVO 14-20": f_14_20,
+            "NOTTURNO 20-08": n_20_08,
+            "OreM": om, "OreP": op, "OreN": on
         })
-    
     st.session_state.db_turni = pd.DataFrame(rows)
 
-# --- 5. VISUALIZZAZIONE E EDITING ---
+# --- 4. EDITING E EXPORT ---
 if not st.session_state.db_turni.empty:
-    lista_m = st.session_state.medici + ["---", "SOSTITUTO"]
+    lista_m = st.session_state.medici + ["---"]
     
-    # Editor della tabella
     edited_df = st.data_editor(
         st.session_state.db_turni,
-        column_order=("Data", "Tipo", "Mattina", "Pomeriggio", "Notte"),
+        column_order=("GIORNO", "PREFESTIVO 10-14", "PREFESTIVO 14-20", "FESTIVO 08-14", "FESTIVO 14-20", "NOTTURNO 20-08"),
         column_config={
-            "Data": st.column_config.TextColumn("Data e Giorno", width="medium", disabled=True),
-            "Tipo": st.column_config.TextColumn("Stato Giorno", width="small", disabled=True),
-            "Mattina": st.column_config.SelectboxColumn("Mattina (Diurna)", options=lista_m),
-            "Pomeriggio": st.column_config.SelectboxColumn("Pomeriggio (Diurna)", options=lista_m),
-            "Notte": st.column_config.SelectboxColumn("Notte (20:00-08:00)", options=lista_m),
+            "GIORNO": st.column_config.TextColumn("GIORNO", width="medium", disabled=True),
+            "PREFESTIVO 10-14": st.column_config.SelectboxColumn("10-14", options=lista_m),
+            "PREFESTIVO 14-20": st.column_config.SelectboxColumn("14-20", options=lista_m),
+            "FESTIVO 08-14": st.column_config.SelectboxColumn("08-14", options=lista_m),
+            "FESTIVO 14-20": st.column_config.SelectboxColumn("14-20", options=lista_m),
+            "NOTTURNO 20-08": st.column_config.SelectboxColumn("20-08", options=lista_m),
         },
-        use_container_width=True,
-        hide_index=True
+        use_container_width=True, hide_index=True
     )
 
-    # Riepilogo Ore
-    st.divider()
-    st.subheader("📊 Calcolo Ore Totali del Mese")
-    stats = []
-    for med in st.session_state.medici:
-        o_m = edited_df[edited_df["Mattina"] == med]["OreM"].sum()
-        o_p = edited_df[edited_df["Pomeriggio"] == med]["OreP"].sum()
-        o_n = edited_df[edited_df["Notte"] == med]["OreN"].sum()
-        stats.append({"Medico": med, "Ore Totali": int(o_m + o_p + o_n)})
-    
-    st.table(pd.DataFrame(stats))
+    # --- DOWNLOAD EXCEL ---
+    buffer_excel = io.BytesIO()
+    with pd.ExcelWriter(buffer_excel, engine='xlsxwriter') as writer:
+        edited_df.drop(columns=["OreM", "OreP", "OreN"]).to_excel(writer, index=False, sheet_name='Turni')
+    st.download_button("📥 Scarica in EXCEL", buffer_excel.getvalue(), f"Turni_{mese_nome}.xlsx")
+
+    # --- GENERAZIONE PDF ---
+    if st.button("📄 Genera PDF"):
+        pdf = FPDF(orientation='L', unit='mm', format='A4')
+        pdf.add_page()
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 10, f"PRESIDIO DI CONTINUITA' ASSISTENZIALE PORTO EMPEDOCLE - {mese_nome.upper()} {anno_sel}", ln=True, align='C')
+        pdf.set_font("Arial", 'B', 8)
+        
+        # Intestazioni 
+        cols = ["GIORNO", "PREF 10-14", "PREF 14-20", "FEST 08-14", "FEST 14-20", "NOTT 20-08"]
+        col_widths = [45, 45, 45, 45, 45, 45]
+        for i, col in enumerate(cols):
+            pdf.cell(col_widths[i], 10, col, border=1, align='C')
+        pdf.ln()
+        
+        pdf.set_font("Arial", '', 8)
+        for _, row in edited_df.iterrows():
+            pdf.cell(col_widths[0], 8, str(row["GIORNO"]), border=1)
+            pdf.cell(col_widths[1], 8, str(row["PREFESTIVO 10-14"]), border=1, align='C')
+            pdf.cell(col_widths[2], 8, str(row["PREFESTIVO 14-20"]), border=1, align='C')
+            pdf.cell(col_widths[3], 8, str(row["FESTIVO 08-14"]), border=1, align='C')
+            pdf.cell(col_widths[4], 8, str(row["FESTIVO 14-20"]), border=1, align='C')
+            pdf.cell(col_widths[5], 8, str(row["NOTTURNO 20-08"]), border=1, align='C')
+            pdf.ln()
+            
+        pdf_output = pdf.output(dest='S').encode('latin-1')
+        st.download_button("📥 Scarica in PDF", pdf_output, f"Turni_{mese_nome}.pdf", "application/pdf")
