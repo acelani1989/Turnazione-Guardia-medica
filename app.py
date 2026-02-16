@@ -36,6 +36,22 @@ def get_festivita(anno):
 
 # --- 2. SETUP E SESSION STATE ---
 st.set_page_config(page_title="Turni PCA Porto Empedocle", layout="wide")
+
+# CSS personalizzato per rendere il tasto GENERA rosso e pulire lo stile
+st.markdown("""
+    <style>
+    div.stButton > button:first-child {
+        background-color: #ff4b4b;
+        color: white;
+        border: none;
+    }
+    div.stButton > button:first-child:hover {
+        background-color: #ff3333;
+        color: white;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 st.markdown("### PRESIDIO DI CONTINUITA’ ASSISTENZIALE PORTO EMPEDOCLE")
 
 if 'db' not in st.session_state:
@@ -71,18 +87,9 @@ with st.sidebar:
     idx_m = mesi_ita.index(mese_sel) + 1
     
     placeholder_ore = st.empty()
-    
-    if st.session_state.db is not None:
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df_export = st.session_state.db.copy().replace(["None", "nan", "NaN", "0", 0, "0.0"], "")
-            df_export.to_excel(writer, sheet_name='Turni', index=False)
-            pd.DataFrame({"ListaMedici": st.session_state.medici_lista}).to_excel(writer, sheet_name='Anagrafica', index=False)
-        st.write("---")
-        st.download_button("📤 BACKUP EXCEL", buffer.getvalue(), f"backup_{mese_sel}.xlsx", use_container_width=True)
 
-# --- 4. LOGICA GENERAZIONE ---
-if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_width=True):
+# --- 4. TASTO ROSSO GENERA ---
+if st.button("🚀 GENERA SCHEMA AUTOMATICO", use_container_width=True):
     if not medici_attivi:
         st.warning("Seleziona almeno un medico dalla sidebar!")
     else:
@@ -125,9 +132,9 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
             })
         st.session_state.db = pd.DataFrame(rows).replace(["None", "nan", "NaN", "0", 0], "")
 
-# --- 5. VISUALIZZAZIONE PDF IN ALTO E TABELLA ---
+# --- 5. VISUALIZZAZIONE SCHEMA E PDF SOTTO IL TASTO ---
 if st.session_state.db is not None:
-    # A. Calcolo Ore per Sidebar e PDF
+    # Calcolo Ore per Sidebar
     riepilogo_medici = []
     tot_ore_mese = 0
     for m in st.session_state.medici_lista:
@@ -141,26 +148,23 @@ if st.session_state.db is not None:
             riepilogo_medici.append((m, tot))
             tot_ore_mese += tot
 
-    # Sidebar Ore
     with placeholder_ore.container():
         st.subheader("📊 Ore Medici")
         for m, o in riepilogo_medici: st.write(f"**{m}**: {o} h")
         st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:20px;font-weight:bold;margin:0;">TOT: {tot_ore_mese} h</p></div>', unsafe_allow_html=True)
 
-    # B. Creazione PDF
+    # Creazione PDF (sempre aggiornato)
     pdf = FPDF('P', 'mm', 'A4')
     pdf.set_margins(7, 10, 7)
     pdf.add_page()
     pdf.set_font("helvetica", 'B', 10)
     pdf.cell(0, 6, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", align='C', ln=1)
     pdf.ln(2)
-
     w_g, w_c = 42, 30
     pdf.set_font("helvetica", 'B', 7)
-    cols_h = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
-    for i, c in enumerate(cols_h): pdf.cell(w_g if i==0 else w_c, 6, c, 1, 0, 'C')
+    for i, c in enumerate(["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]):
+        pdf.cell(w_g if i==0 else w_c, 6, c, 1, 0, 'C')
     pdf.ln()
-
     pdf.set_font("helvetica", '', 6.5)
     for _, r in st.session_state.db.iterrows():
         fill = "*" in str(r["GIORNO"])
@@ -170,27 +174,15 @@ if st.session_state.db is not None:
             val = str(r[k]) if (pd.notna(r[k]) and str(r[k]).strip().lower() not in ["none", "nan", "", "0"]) else ""
             pdf.cell(w_c, 5.2, val, 1, 0, 'C', fill=True)
         pdf.ln()
-
-    # Firme nel PDF
-    pdf.ln(5); pdf.set_font("helvetica", 'B', 8)
-    pdf.cell(0, 6, "RIEPILOGO ORE E FIRME", ln=1)
+    pdf.ln(5); pdf.set_font("helvetica", 'B', 8); pdf.cell(0, 6, "RIEPILOGO ORE E FIRME", ln=1)
     for m, o in riepilogo_medici:
-        pdf.set_font("helvetica", 'B', 7)
-        pdf.cell(45, 7, str(m), 1, 0, 'C')
-        pdf.cell(20, 7, f"{o} h", 1, 0, 'C')
-        pdf.cell(70, 7, " Firma: ________________", 1, 1, 'L')
+        pdf.set_font("helvetica", 'B', 7); pdf.cell(45, 7, str(m), 1, 0, 'C')
+        pdf.cell(20, 7, f"{o} h", 1, 0, 'C'); pdf.cell(70, 7, " Firma: ________________", 1, 1, 'L')
 
-    # C. POSIZIONAMENTO PULSANTE DOWNLOAD SOPRA LA TABELLA
+    # CONTENITORE SCHEMA SOTTO IL TASTO ROSSO
     st.write("---")
-    st.download_button(
-        label="💾 SCARICA PDF FINALE", 
-        data=bytes(pdf.output()), 
-        file_name=f"Turni_{mese_sel}_{anno_sel}.pdf", 
-        mime="application/pdf",
-        use_container_width=True
-    )
+    st.download_button("💾 SCARICA PDF FINALE", bytes(pdf.output()), f"Turni_{mese_sel}.pdf", use_container_width=True)
 
-    # D. Editor Tabella
     config = {k: st.column_config.SelectboxColumn(k, options=[""] + st.session_state.medici_lista) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
     df_ed = st.data_editor(st.session_state.db.replace(["None", "nan", "NaN", "0", 0], ""), 
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
