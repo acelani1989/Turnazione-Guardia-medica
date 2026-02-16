@@ -102,6 +102,8 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
         elif wd in [5, 6]: ass_notte = "Siracusa"
         
         ass_diurna = ass_notte if ((is_p or is_f) and ass_notte != "Lombardo") else ""
+        
+        # Prefissi con asterischi
         prefix = "** " if is_f else ("* " if is_p else "  ")
         
         rows.append({
@@ -117,7 +119,7 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
 
 # --- 5. EDITOR E PDF ---
 if st.session_state.db is not None:
-    # Calcolo Ore per Sidebar e PDF
+    # Calcolo Ore
     riepilogo_medici = []
     tot_ore_mese = 0
     for m in st.session_state.medici_lista:
@@ -138,21 +140,33 @@ if st.session_state.db is not None:
     pdf.cell(0, 6, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", align='C', new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
 
+    # Intestazione Tabella
     w_g, w_c = 42, 30
     pdf.set_font("helvetica", 'B', 7)
     cols_h = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
     for i, c in enumerate(cols_h): pdf.cell(w_g if i==0 else w_c, 6, c, 1, 0, 'C')
     pdf.ln()
 
+    # Corpo Tabella PDF
     pdf.set_font("helvetica", '', 6.5)
     for _, r in st.session_state.db.iterrows():
-        pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1)
+        giorno_testo = str(r["GIORNO"])
+        
+        # Se c'è un asterisco, colora lo sfondo della riga di grigio chiaro
+        has_star = "*" in giorno_testo
+        if has_star:
+            pdf.set_fill_color(240, 240, 240) # Grigio chiarissimo
+        else:
+            pdf.set_fill_color(255, 255, 255) # Bianco
+
+        pdf.cell(w_g, 5.2, giorno_testo, 1, 0, 'L', fill=True)
+        
         for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
             val = str(r[k]) if (pd.notna(r[k]) and str(r[k]).strip().lower() not in ["none", "nan", "", "0"]) else ""
-            pdf.cell(w_c, 5.2, val, 1, 0, 'C')
+            pdf.cell(w_c, 5.2, val, 1, 0, 'C', fill=True)
         pdf.ln()
 
-    # AGGIUNTA RIEPILOGO ORE E FIRME NEL PDF
+    # RIEPILOGO ORE E FIRME NEL PDF
     pdf.ln(5)
     pdf.set_font("helvetica", 'B', 8)
     pdf.cell(0, 6, "RIEPILOGO ORE E FIRME", new_x="LMARGIN", new_y="NEXT")
@@ -162,6 +176,7 @@ if st.session_state.db is not None:
         pdf.cell(25, 7, f"{o} h", border=1, align='C')
         pdf.cell(65, 7, " Firma: ________________", border=1, align='L', new_x="LMARGIN", new_y="NEXT")
     
+    # Riga Totale Mensile
     pdf.set_font("helvetica", 'B', 8); pdf.set_fill_color(230, 230, 250)
     pdf.cell(45, 7, "TOTALE MENSILE", border=1, align='C', fill=True)
     pdf.cell(25, 7, f"{tot_ore_mese} h", border=1, align='C', fill=True)
@@ -170,14 +185,14 @@ if st.session_state.db is not None:
     # TASTO PDF IN ALTO
     st.download_button("💾 SCARICA PDF FINALE", bytes(pdf.output()), f"Turni_{mese_sel}.pdf", "application/pdf", use_container_width=True)
 
-    # TABELLA EDITABILE
+    # TABELLA EDITABILE APP
     config = {k: st.column_config.SelectboxColumn(k, options=[""] + st.session_state.medici_lista) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
     df_ed = st.data_editor(st.session_state.db.replace(["None", "nan", "NaN", "0", 0, "0.0"], ""), 
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
                            column_config=config, hide_index=True, use_container_width=True)
     st.session_state.db = df_ed
 
-    # Riepilogo Sidebar
+    # Box Ore Sidebar
     with placeholder_sidebar:
         st.subheader("📊 Ore Medici")
         for m, o in riepilogo_medici:
