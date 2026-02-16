@@ -65,7 +65,8 @@ if not st.session_state.db.empty:
     # EXCEL
     buf_ex = io.BytesIO()
     with pd.ExcelWriter(buf_ex, engine='xlsxwriter') as writer:
-        df_ed.drop(columns=["TIPO"]).to_excel(writer, index=False, sheet_name='Turni')
+        df_ex = df_ed.drop(columns=["TIPO"])
+        df_ex.to_excel(writer, index=False, sheet_name='Turni')
         wb, ws = writer.book, writer.sheets['Turni']
         f_f, f_p = wb.add_format({'bg_color': '#FFC7CE'}), wb.add_format({'bg_color': '#FFEB9C'})
         for i, t in enumerate(df_ed["TIPO"]):
@@ -77,23 +78,23 @@ if not st.session_state.db.empty:
     with c2:
         if pdf_ok and st.button("📄 GENERA PDF (PAGINA SINGOLA)", use_container_width=True):
             pdf = FPDF('L', 'mm', 'A4')
-            pdf.set_margins(8, 5, 8)
+            pdf.set_margins(10, 5, 10) # Margini: Sinistro 10, Superiore 5, Destro 10
             pdf.add_page()
-            pdf.set_font("Arial", 'B', 11)
-            pdf.cell(0, 7, "PRESIDIO DI CONTINUITA' ASSISTENZIALE PORTO EMPEDOCLE", 0, 1, 'C')
-            pdf.cell(0, 7, f"TURNI {mese_sel} {anno_sel}", 0, 1, 'C')
+            pdf.set_font("Arial", 'B', 10)
+            pdf.cell(0, 6, "PRESIDIO DI CONTINUITA' ASSISTENZIALE PORTO EMPEDOCLE", 0, 1, 'C')
+            pdf.cell(0, 6, f"TURNI {mese_sel} {anno_sel}", 0, 1, 'C')
             pdf.ln(1)
             pdf.set_font("Arial", 'B', 8)
             cols = ["GIORNO", "PREF 10-14", "PREF 14-20", "FEST 08-14", "FEST 14-20", "NOTT 20-08"]
             for c in cols: pdf.cell(46, 6, c, 1, 0, 'C')
             pdf.ln()
-            pdf.set_font("Arial", '', 7.5)
+            pdf.set_font("Arial", '', 7)
             for _, r in df_ed.iterrows():
                 if r["TIPO"] == "F": pdf.set_fill_color(255, 199, 206)
                 elif r["TIPO"] == "P": pdf.set_fill_color(255, 235, 156)
                 else: pdf.set_fill_color(255, 255, 255)
-                pdf.cell(46, 5.5, str(r["GIORNO"]), 1, 0, 'L', True)
+                pdf.cell(46, 5.0, str(r["GIORNO"]), 1, 0, 'L', True) # Altezza riga 5.0mm
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-                    pdf.cell(46, 5.5, str(r[k]), 1, 0, 'C', True)
+                    pdf.cell(46, 5.0, str(r[k]), 1, 0, 'C', True)
                 pdf.ln()
             st.download_button("💾 SALVA PDF", pdf.output(dest='S').encode('latin-1'), "Turni.pdf", "application/pdf", use_container_width=True)
