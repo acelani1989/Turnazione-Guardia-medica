@@ -70,7 +70,6 @@ with st.sidebar:
     if st.session_state.db is not None:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            # Pulizia None prima dell'export
             df_export = st.session_state.db.fillna("")
             df_export.to_excel(writer, sheet_name='Turni', index=False)
             pd.DataFrame({"ListaMedici": st.session_state.medici_lista}).to_excel(writer, sheet_name='Anagrafica', index=False)
@@ -131,7 +130,6 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
 
 # --- 5. EDITOR E CALCOLO ORE ---
 if st.session_state.db is not None:
-    # Sostituiamo ogni valore nullo con stringa vuota
     st.session_state.db = st.session_state.db.fillna("")
     
     config = {k: st.column_config.SelectboxColumn(k, options=[""] + st.session_state.medici_lista) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
@@ -157,7 +155,7 @@ if st.session_state.db is not None:
         for _, r in df_ore.iterrows(): st.write(f"**{r['Medico']}**: {r['Ore']} h")
         st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:22px;font-weight:bold;margin:0;">{tot_mensile} h</p></div>', unsafe_allow_html=True)
 
-    # --- 6. PDF GENERATION (CORRETTA PER FPDF2 E STREAMLIT) ---
+    # --- 6. PDF GENERATION (PULIZIA NONE/NAN) ---
     st.write("---")
     col1, col2 = st.columns(2)
     
@@ -179,12 +177,24 @@ if st.session_state.db is not None:
     for _, r in df_ed.iterrows():
         fill = "*" in str(r["GIORNO"])
         pdf.set_fill_color(235, 235, 235) if fill else pdf.set_fill_color(255, 255, 255)
-        pdf.cell(w_g, 5.2, str(r["GIORNO"]), border=1, fill=True)
+        
+        # Pulizia Giorno
+        giorno_txt = str(r["GIORNO"]) if pd.notna(r["GIORNO"]) else ""
+        pdf.cell(w_g, 5.2, giorno_txt, border=1, fill=True)
+        
+        # Pulizia Colonne Turni
         for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-            val = str(r[k]) if (pd.notna(r[k]) and str(r[k]).strip().lower() not in ["none", "nan", ""]) else ""
-            pdf.cell(w_c, 5.2, val, border=1, align='C', fill=True)
+            val_raw = r[k]
+            # Se il valore è nullo, "None", "nan" o stringa vuota, stampa stringa bianca
+            if pd.isna(val_raw) or str(val_raw).strip().lower() in ["none", "nan", ""]:
+                val_pdf = ""
+            else:
+                val_pdf = str(val_raw)
+                
+            pdf.cell(w_c, 5.2, val_pdf, border=1, align='C', fill=True)
         pdf.ln()
 
+    # Sezione Firme
     pdf.ln(4)
     pdf.set_font("helvetica", 'B', 8)
     pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", new_x="LMARGIN", new_y="NEXT")
@@ -194,12 +204,12 @@ if st.session_state.db is not None:
         pdf.cell(25, 7, f"{ro['Ore']} h", border=1, align='C')
         pdf.cell(65, 7, " Firma: ________________", border=1, align='L', new_x="LMARGIN", new_y="NEXT")
     
+    # Totale Mensile
     pdf.set_font("helvetica", 'B', 8); pdf.set_fill_color(230, 230, 250)
     pdf.cell(45, 7, "TOTALE MENSILE", border=1, align='C', fill=True)
     pdf.cell(25, 7, f"{tot_mensile} h", border=1, align='C', fill=True)
     pdf.cell(65, 7, "", border=1, fill=True)
 
-    # TRASFORMAZIONE OUTPUT IN BYTES (Risolve AttributeError e StreamlitAPIException)
     pdf_output = bytes(pdf.output())
     
     with col1:
