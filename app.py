@@ -26,7 +26,7 @@ def get_festivita(anno):
     p = pasqua(anno); pp = p + timedelta(days=1)
     return {(1,1):"Capod.",(6,1):"Epif.",(25,2):"Patr.",(25,4):"Lib.",(1,5):"Lav.",(2,6):"Rep.",(15,8):"Ferr.",(1,11):"Ognis.",(8,12):"Immac.",(25,12):"Nat.",(26,12):"Stef.",(p.day,p.month):"Pasqua",(pp.day,pp.month):"Pasqu."}
 
-st.set_page_config(page_title="Gestione Ore PCA", layout="wide")
+st.set_page_config(page_title="Gestione Turni", layout="wide")
 st.markdown("### PRESIDIO DI CONTINUITA’ ASSISTENZIALE PORTO EMPEDOCLE")
 
 medici = ["Piscopo", "Celani", "Lombardo", "Siracusa"]
@@ -37,7 +37,7 @@ with st.sidebar:
     mese_sel = st.selectbox("Mese", mesi_ita, index=datetime.now().month - 1)
     idx_m = mesi_ita.index(mese_sel) + 1
 
-if st.button("🚀 GENERA SCHEMA E CALCOLA ORE", type="primary", use_container_width=True):
+if st.button("🚀 GENERA SCHEMA", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
     gg = calendar.monthrange(anno_sel, idx_m)[1]
     rows = []
@@ -63,25 +63,23 @@ if 'db' in st.session_state:
               df_ed[df_ed["NOTT 20-08"]==m]["hN"].sum()
         riepilogo.append({"Medico": m, "Ore Totali": int(ore)})
     df_ore = pd.DataFrame(riepilogo)
-    st.table(df_ore)
 
-    # EXPORT
     c1, c2 = st.columns(2)
     with c1:
         buf_ex = io.BytesIO()
         with pd.ExcelWriter(buf_ex, engine='xlsxwriter') as writer:
             df_ed.drop(columns=["hM","hP","hN","TIPO"]).to_excel(writer, index=False, sheet_name='Turni')
             df_ore.to_excel(writer, index=False, sheet_name='Conteggio Ore')
-        st.download_button("📥 EXCEL + ORE", buf_ex.getvalue(), f"Turni_{mese_sel}.xlsx", use_container_width=True)
+        st.download_button("📥 EXCEL", buf_ex.getvalue(), f"Turni_{mese_sel}.xlsx", use_container_width=True)
 
     with c2:
-        if pdf_ok and st.button("📄 PDF UNICA PAGINA", use_container_width=True):
+        if pdf_ok and st.button("📄 GENERA PDF", use_container_width=True):
             pdf = FPDF('P', 'mm', 'A4')
             pdf.set_margins(7, 7, 7)
             pdf.add_page()
             pdf.set_font("Arial", 'B', 10)
-            pdf.cell(0, 6, "PCA PORTO EMPEDOCLE - TURNI E CONTEGGIO ORE", 0, 1, 'C')
-            pdf.cell(0, 6, f"MESE: {mese_sel} {anno_sel}", 0, 1, 'C')
+            pdf.cell(0, 6, "PCA PORTO EMPEDOCLE - TURNI E ORE", 0, 1, 'C')
+            pdf.cell(0, 6, f"{mese_sel} {anno_sel}", 0, 1, 'C')
             pdf.ln(2)
             
             # Tabella Turni
@@ -93,22 +91,28 @@ if 'db' in st.session_state:
             
             pdf.set_font("Arial", '', 6.5)
             for _, r in df_ed.iterrows():
+                # Colorazione
                 pdf.set_fill_color(255,199,206) if r["TIPO"]=="F" else pdf.set_fill_color(255,235,156) if r["TIPO"]=="P" else pdf.set_fill_color(255,255,255)
+                
+                # Cella GIORNO
                 pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
+                
+                # Celle MEDICI (Sostituisce None con "")
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-                    pdf.cell(w_c, 5.2, str(r[k]), 1, 0, 'C', True)
+                    valore = str(r[k]) if r[k] and str(r[k]).lower() != "none" else ""
+                    pdf.cell(w_c, 5.2, valore, 1, 0, 'C', True)
                 pdf.ln()
             
-            # Tabella Ore (nello stesso foglio)
+            # Tabella Ore (Nello stesso foglio)
             pdf.ln(3)
             pdf.set_font("Arial", 'B', 8)
             pdf.cell(0, 6, "RIEPILOGO ORE TOTALI PER MEDICO", 0, 1, 'L')
             pdf.set_font("Arial", 'B', 7)
-            pdf.cell(50, 6, "MEDICO", 1, 0, 'C')
-            pdf.cell(30, 6, "ORE ESEGUITE", 1, 1, 'C')
+            pdf.cell(50, 5, "MEDICO", 1, 0, 'C')
+            pdf.cell(30, 5, "ORE TOTALI", 1, 1, 'C')
             pdf.set_font("Arial", '', 7)
             for _, row_o in df_ore.iterrows():
                 pdf.cell(50, 5, str(row_o["Medico"]), 1, 0, 'C')
                 pdf.cell(30, 5, str(row_o["Ore Totali"]), 1, 1, 'C')
             
-            st.download_button("💾 SALVA PDF", pdf.output(dest='S').encode('latin-1'), "Turni_e_Ore.pdf", "application/pdf", use_container_width=True)
+            st.download_button("💾 SALVA PDF", pdf.output(dest='S').encode('latin-1'), "Turni.pdf", "application/pdf", use_container_width=True)
