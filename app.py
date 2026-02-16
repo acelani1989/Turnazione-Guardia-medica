@@ -10,7 +10,7 @@ try:
 except ImportError:
     pdf_ok = False
 
-# --- LOGICA CALCOLO ---
+# --- LOGICA CALENDARIO ---
 def get_festivita(anno):
     def pasqua(y):
         a, b, c = y % 19, y // 100, y % 100
@@ -49,18 +49,18 @@ if st.button("🚀 GENERA SCHEMA", type="primary", use_container_width=True):
         is_f = wd == 6 or f_n != ""
         is_p = wd == 5 or (not is_f and ((dt + timedelta(days=1)).weekday() == 6 or ((dt + timedelta(days=1)).day, (dt + timedelta(days=1)).month) in fest))
         
-        # Simboli e Label
-        prefix = "** " if is_f else ("* " if is_p else "")
+        # Simbolo unico per evidenziare entrambi (Prefestivi e Festivi)
+        prefix = "* " if (is_f or is_p) else ""
         label = f"{prefix}{d} {ita_g[wd]} {f_n}"
         
         rows.append({"GIORNO": label, "P 10-14": "", "P 14-20": "", "F 08-14": "", "F 14-20": "", "NOTT 20-08": "", 
-                     "hM": 4 if is_p else (6 if is_f else 0), "hP": 6 if (is_p or is_f) else 0, "hN": 12, "TIPO": "F" if is_f else ("P" if is_p else "N")})
+                     "hM": 4 if is_p else (6 if is_f else 0), "hP": 6 if (is_p or is_f) else 0, "hN": 12, "TIPO": "E" if (is_f or is_p) else "N"})
     st.session_state.db = pd.DataFrame(rows)
 
 if 'db' in st.session_state:
     df_ed = st.data_editor(st.session_state.db, column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"), hide_index=True, use_container_width=True)
 
-    # Conteggio Ore
+    # Calcolo Ore
     riepilogo = []
     for m in medici:
         ore = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + df_ed[df_ed["F 08-14"]==m]["hM"].sum() + \
@@ -76,11 +76,9 @@ if 'db' in st.session_state:
             df_ed.drop(columns=["hM","hP","hN","TIPO"]).to_excel(writer, index=False, sheet_name='Turni')
             df_ore.to_excel(writer, index=False, sheet_name='Ore')
             wb, ws = writer.book, writer.sheets['Turni']
-            f_f = wb.add_format({'bg_color': '#C0C0C0'}) # Grigio evidente
-            f_p = wb.add_format({'bg_color': '#E0E0E0'}) # Grigio più chiaro
+            f_evidenza = wb.add_format({'bg_color': '#B0B0B0'}) # Grigio scuro per entrambi
             for i, t in enumerate(df_ed["TIPO"]):
-                if t == "F": ws.set_row(i+1, None, f_f)
-                elif t == "P": ws.set_row(i+1, None, f_p)
+                if t == "E": ws.set_row(i+1, None, f_evidenza)
         st.download_button("📥 EXCEL", buf_ex.getvalue(), "Turni.xlsx", use_container_width=True)
 
     with c2:
@@ -101,10 +99,11 @@ if 'db' in st.session_state:
             
             pdf.set_font("Arial", '', 6.5)
             for _, r in df_ed.iterrows():
-                # Evidenziazione: Grigio 200 (Festivo), 235 (Prefestivo)
-                if r["TIPO"] == "F": pdf.set_fill_color(200, 200, 200)
-                elif r["TIPO"] == "P": pdf.set_fill_color(235, 235, 235)
-                else: pdf.set_fill_color(255, 255, 255)
+                # Evidenziazione UGUALI (Grigio 200 per entrambi)
+                if r["TIPO"] == "E":
+                    pdf.set_fill_color(200, 200, 200)
+                else:
+                    pdf.set_fill_color(255, 255, 255)
                 
                 pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
@@ -112,13 +111,14 @@ if 'db' in st.session_state:
                     pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
                 pdf.ln()
             
+            # Legenda e Riepilogo
             pdf.ln(2)
             pdf.set_font("Arial", 'I', 6)
-            pdf.cell(0, 4, "Legenda: ** Festivo (Grigio Scuro) | * Prefestivo (Grigio Chiaro)", 0, 1, 'L')
+            pdf.cell(0, 4, "* Indica Giorno Festivo o Prefestivo (Evidenziato in Grigio)", 0, 1, 'L')
             
             pdf.ln(2)
             pdf.set_font("Arial", 'B', 8)
-            pdf.cell(0, 5, "RIEPILOGO ORE TOTALI", 0, 1, 'L')
+            pdf.cell(0, 5, "RIEPILOGO ORE TOTALI PER MEDICO", 0, 1, 'L')
             pdf.set_font("Arial", 'B', 7)
             pdf.cell(50, 5, "MEDICO", 1, 0, 'C'); pdf.cell(30, 5, "ORE", 1, 1, 'C')
             pdf.set_font("Arial", '', 7)
