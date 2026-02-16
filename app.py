@@ -21,7 +21,7 @@ def get_festivita(anno):
     p = pasqua(anno); pp = p + timedelta(days=1)
     return {(1, 1): "Capodanno", (6, 1): "Epifania", (25, 2): "Patrono", (25, 4): "Liberazione", (1, 5): "Lavoro", (2, 6): "Repubblica", (15, 8): "Ferragosto", (1, 11): "Ognissanti", (8, 12): "Immacolata", (25, 12): "Natale", (26, 12): "S.Stefano", (p.day, p.month): "Pasqua", (pp.day, pp.month): "Pasquetta"}
 
-# --- 2. SETUP E STILE (PULIZIA TOTALE) ---
+# --- 2. SETUP E STILE ---
 st.set_page_config(page_title="Turni PCA Porto Empedocle", layout="wide")
 st.markdown("""
     <style>
@@ -41,7 +41,7 @@ st.markdown("""
 if 'db' not in st.session_state: st.session_state.db = None
 if 'medici_lista' not in st.session_state: st.session_state.medici_lista = ["Celani", "Piscopo", "Lombardo", "Siracusa"]
 
-# --- 3. SIDEBAR (CONFIGURAZIONE E BACKUP) ---
+# --- 3. SIDEBAR (BACKUP) ---
 with st.sidebar:
     st.header("⚙️ OPZIONI")
     new_med = st.text_input("➕ Aggiungi medico")
@@ -86,7 +86,7 @@ def calcola_ore(df):
 # --- 5. INTERFACCIA ---
 st.markdown(f"### PCA PORTO EMPEDOCLE - {mese_sel}")
 
-# A. TASTO GENERA (IN ALTO)
+# 1. TASTO GENERA (AL TOP)
 if st.button("🚀 GENERA / RESETTA SCHEMA"):
     fest = get_festivita(anno_sel); gg = calendar.monthrange(anno_sel, idx_m)[1]
     rows = []; ven_count = 0; ita_g = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
@@ -102,10 +102,9 @@ if st.button("🚀 GENERA / RESETTA SCHEMA"):
         elif wd in [5, 6]: ass_notte = get_m("Siracusa", 3)
         ass_diurna = ass_notte if ((is_p or is_f) and ass_notte != "Lombardo") else ""
         rows.append({"GIORNO": f"{'**' if is_f else ('*' if is_p else '')} {d} {ita_g[wd]} {f_n}", "P 10-14": ass_diurna if is_p else "", "P 14-20": ass_diurna if is_p else "", "F 08-14": ass_diurna if is_f else "", "F 14-20": ass_diurna if is_f else "", "NOTT 20-08": ass_notte})
-    st.session_state.db = pd.DataFrame(rows)
-    st.rerun()
+    st.session_state.db = pd.DataFrame(rows); st.rerun()
 
-# B. SCHEMA E DOWNLOAD PDF
+# 2. SEZIONE OUTPUT
 if st.session_state.db is not None:
     df_clean = st.session_state.db.fillna("").replace(["None", "nan", 0, "0.0", "NaN"], "")
     riepilogo, tot_mese = calcola_ore(df_clean)
@@ -113,12 +112,7 @@ if st.session_state.db is not None:
     # Conteggio Ore
     st.markdown(f"**TOTALE: {tot_mese}h** | " + " - ".join([f"{r['Med']}: {r['Ore']}h" for r in riepilogo]))
 
-    # EDITOR TABELLA (AL CENTRO)
-    config = {k: st.column_config.SelectboxColumn(k, options=[""] + st.session_state.medici_lista) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
-    df_ed = st.data_editor(df_clean, hide_index=True, use_container_width=True, column_config=config, key="main_editor")
-    st.session_state.db = df_ed
-
-    # GENERAZIONE PDF
+    # --- PREPARAZIONE PDF ---
     pdf = FPDF(); pdf.set_auto_page_break(False); pdf.add_page(); pdf.set_font("Helvetica", 'B', 10)
     pdf.cell(0, 8, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", ln=True, align='C')
     pdf.set_font("Helvetica", 'B', 7)
@@ -139,5 +133,10 @@ if st.session_state.db is not None:
     for r in riepilogo:
         pdf.cell(35, 6, f"Dott. {r['Med']}", 1, 0, 'L'); pdf.cell(15, 6, f"{r['Ore']} h", 1, 0, 'C'); pdf.cell(75, 6, " Firma: ________________________", 1, 1, 'L')
 
-    # TASTO DOWNLOAD PDF (SOTTO LO SCHEMA)
+    # 3. TASTO DOWNLOAD PDF (SPOSTATO IN ALTO RISPETTO ALLO SCHEMA)
     st.download_button("💾 SCARICA PDF FINALE (PAGINA SINGOLA)", data=bytes(pdf.output()), file_name=f"Turni_{mese_sel}.pdf", mime="application/pdf", use_container_width=True)
+
+    # 4. EDITOR TABELLA (SOTTO IL PDF)
+    config = {k: st.column_config.SelectboxColumn(k, options=[""] + st.session_state.medici_lista) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
+    df_ed = st.data_editor(df_clean, hide_index=True, use_container_width=True, column_config=config, key="main_editor")
+    st.session_state.db = df_ed
