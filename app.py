@@ -5,11 +5,11 @@ import io
 import base64
 from datetime import datetime, timedelta
 
-# Importazione FPDF (gestisce sia fpdf che fpdf2)
+# Importazione FPDF (ottimizzata per fpdf2)
 try:
     from fpdf import FPDF
 except ImportError:
-    st.error("Libreria FPDF non trovata. Aggiungi 'fpdf2' al file requirements.txt")
+    st.error("Libreria FPDF non trovata. Assicurati di avere 'fpdf2' nel file requirements.txt")
 
 # --- 1. FUNZIONE FESTIVITÀ ITALIANE ---
 def get_festivita(anno):
@@ -62,40 +62,32 @@ with st.sidebar:
     idx_m = mesi_ita.index(mese_sel) + 1
     
     st.write("---")
-    placeholder_sidebar = st.container() # Spazio per il riepilogo ore
+    placeholder_sidebar = st.container()
     
     st.write("---")
     st.subheader("💾 Backup Dati (Excel)")
     
-    # PULSANTE SCARICA BACKUP (ESPORTA)
     if st.session_state.db is not None:
         buffer = io.BytesIO()
-        try:
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                st.session_state.db.to_excel(writer, sheet_name='Turni', index=False)
-                pd.DataFrame({"ListaMedici": st.session_state.medici_lista}).to_excel(writer, sheet_name='Anagrafica', index=False)
-            
-            st.download_button(
-                label="📤 SCARICA BACKUP", 
-                data=buffer.getvalue(), 
-                file_name=f"backup_turni_{mese_sel}_{anno_sel}.xlsx", 
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
-                use_container_width=True
-            )
-        except Exception as e:
-            st.error(f"Errore creazione backup: {e}")
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            st.session_state.db.to_excel(writer, sheet_name='Turni', index=False)
+            pd.DataFrame({"ListaMedici": st.session_state.medici_lista}).to_excel(writer, sheet_name='Anagrafica', index=False)
+        
+        st.download_button(label="📤 SCARICA BACKUP", data=buffer.getvalue(), 
+                           file_name=f"backup_turni_{mese_sel}_{anno_sel}.xlsx", 
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                           use_container_width=True)
     
-    # CARICA BACKUP (IMPORTA)
     uploaded_file = st.file_uploader("📥 IMPORTA BACKUP", type=["xlsx"], label_visibility="collapsed")
     if uploaded_file is not None:
         try:
-            st.session_state.db = pd.read_excel(uploaded_file, sheet_name='Turni')
+            st.session_state.db = pd.read_excel(uploaded_file, sheet_name='Turni').fillna("")
             df_medici = pd.read_excel(uploaded_file, sheet_name='Anagrafica')
             st.session_state.medici_lista = df_medici["ListaMedici"].tolist()
-            st.success("Backup caricato con successo!")
+            st.success("Backup caricato!")
             st.rerun()
-        except Exception as e:
-            st.error("Errore: assicurati che il file sia un backup valido.")
+        except:
+            st.error("Errore nel caricamento del file.")
 
 # --- 4. LOGICA GENERAZIONE TURNI ---
 if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_width=True):
@@ -112,7 +104,6 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
         is_f = (wd == 6 or f_n != "")
         is_p = (wd == 5 or (not is_f and ((dt + timedelta(days=1)).weekday() == 6 or ((dt + timedelta(days=1)).day, (dt + timedelta(days=1)).month) in fest)))
         
-        # Regole Assegnazione Notturna
         ass_notte = ""
         if wd in [0, 2]: ass_notte = "Celani"
         elif wd == 1: ass_notte = "Piscopo"
@@ -122,7 +113,6 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
             ass_notte = "Celani" if ven_count % 2 != 0 else "Piscopo"
         elif wd in [5, 6]: ass_notte = "Siracusa"
         
-        # Diurni: Solo se Prefestivo/Festivo E se NON è Lombardo
         ass_diurna = ass_notte if ((is_p or is_f) and ass_notte != "Lombardo") else ""
         
         prefix = "** " if is_f else ("* " if is_p else "  ")
@@ -135,10 +125,13 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
             "NOTT 20-08": ass_notte,
             "TIPO": "FEST" if is_f else ("PREF" if is_p else "FER")
         })
-    st.session_state.db = pd.DataFrame(rows).replace([None, "nan", "0"], "")
+    st.session_state.db = pd.DataFrame(rows)
 
 # --- 5. EDITOR E CALCOLO ORE ---
 if st.session_state.db is not None:
+    # Sostituiamo ogni valore nullo con stringa vuota prima dell'editor
+    st.session_state.db = st.session_state.db.fillna("")
+    
     config = {k: st.column_config.SelectboxColumn(k, options=[""] + st.session_state.medici_lista) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
     df_ed = st.data_editor(st.session_state.db, column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
                            column_config=config, hide_index=True, use_container_width=True)
@@ -161,48 +154,54 @@ if st.session_state.db is not None:
         for _, r in df_ore.iterrows(): st.write(f"**{r['Medico']}**: {r['Ore']} h")
         st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:22px;font-weight:bold;margin:0;">{tot_mensile} h</p></div>', unsafe_allow_html=True)
 
-    # --- 6. PDF ---
+    # --- 6. PDF GENERATION (CORRETTA PER FPDF2) ---
     st.write("---")
     col1, col2 = st.columns(2)
     
     pdf = FPDF('P', 'mm', 'A4')
     pdf.set_margins(7, 10, 7)
     pdf.add_page()
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(0, 6, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", 0, 1, 'C')
+    pdf.set_font("helvetica", 'B', 10)
+    pdf.cell(0, 6, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", align='C', new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
 
     w_g, w_c = 42, 30
-    pdf.set_font("Arial", 'B', 7)
+    pdf.set_font("helvetica", 'B', 7)
     h_p = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
-    for i, txt in enumerate(h_p): pdf.cell(w_g if i==0 else w_c, 6, txt, 1, 0, 'C')
+    for i, txt in enumerate(h_p):
+        pdf.cell(w_g if i==0 else w_c, 6, txt, border=1, align='C')
     pdf.ln()
 
-    pdf.set_font("Arial", '', 6.5)
+    pdf.set_font("helvetica", '', 6.5)
     for _, r in df_ed.iterrows():
         fill = "*" in str(r["GIORNO"])
         pdf.set_fill_color(235, 235, 235) if fill else pdf.set_fill_color(255, 255, 255)
-        pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
+        pdf.cell(w_g, 5.2, str(r["GIORNO"]), border=1, fill=True)
         for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-            val = str(r[k]).strip() if str(r[k]) not in ["None", "nan", ""] else ""
-            pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
+            val = str(r[k]) if (pd.notna(r[k]) and str(r[k]).strip().lower() not in ["none", "nan", ""]) else ""
+            pdf.cell(w_c, 5.2, val, border=1, align='C', fill=True)
         pdf.ln()
 
-    pdf.ln(4); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
+    pdf.ln(4)
+    pdf.set_font("helvetica", 'B', 8)
+    pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", new_x="LMARGIN", new_y="NEXT")
     for _, ro in df_ore.iterrows():
-        pdf.set_font("Arial", 'B', 7)
-        pdf.cell(45, 7, str(ro["Medico"]), 1, 0, 'C')
-        pdf.cell(25, 7, f"{ro['Ore']} h", 1, 0, 'C')
-        pdf.cell(65, 7, " Firma: ________________", 1, 1, 'L')
+        pdf.set_font("helvetica", 'B', 7)
+        pdf.cell(45, 7, str(ro["Medico"]), border=1, align='C')
+        pdf.cell(25, 7, f"{ro['Ore']} h", border=1, align='C')
+        pdf.cell(65, 7, " Firma: ________________", border=1, align='L', new_x="LMARGIN", new_y="NEXT")
     
-    pdf.set_font("Arial", 'B', 8); pdf.set_fill_color(230, 230, 250)
-    pdf.cell(45, 7, "TOTALE MENSILE", 1, 0, 'C', True)
-    pdf.cell(25, 7, f"{tot_mensile} h", 1, 0, 'C', True); pdf.cell(65, 7, "", 1, 1, 'L', True)
+    pdf.set_font("helvetica", 'B', 8); pdf.set_fill_color(230, 230, 250)
+    pdf.cell(45, 7, "TOTALE MENSILE", border=1, align='C', fill=True)
+    pdf.cell(25, 7, f"{tot_mensile} h", border=1, align='C', fill=True)
+    pdf.cell(65, 7, "", border=1, fill=True)
 
-    pdf_out = pdf.output(dest='S').encode('latin-1')
+    # Correzione AttributeError: pdf.output() restituisce i byte in fpdf2
+    pdf_bytes = pdf.output()
+    
     with col1:
         if st.button("👁️ ANTEPRIMA PDF", use_container_width=True):
-            b64 = base64.b64encode(pdf_out).decode('utf-8')
+            b64 = base64.b64encode(pdf_bytes).decode('utf-8')
             st.markdown(f'<object data="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="800px"></object>', unsafe_allow_html=True)
     with col2:
-        st.download_button("💾 SCARICA PDF", pdf_out, f"Turni_{mese_sel}.pdf", "application/pdf", use_container_width=True)
+        st.download_button("💾 SCARICA PDF", pdf_bytes, f"Turni_{mese_sel}.pdf", "application/pdf", use_container_width=True)
