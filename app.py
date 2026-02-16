@@ -29,7 +29,6 @@ def get_festivita(anno):
 st.set_page_config(page_title="Turni PCA Porto Empedocle", layout="wide")
 st.markdown("### PRESIDIO DI CONTINUITA’ ASSISTENZIALE PORTO EMPEDOCLE")
 
-# --- GESTIONE MEDICI ---
 if 'lista_medici' not in st.session_state:
     st.session_state.lista_medici = ["Celani", "Piscopo", "Lombardo", "Siracusa"]
 
@@ -41,7 +40,6 @@ with st.sidebar:
     mese_sel = st.selectbox("Mese", mesi_ita, index=datetime.now().month - 1)
     idx_m = mesi_ita.index(mese_sel) + 1
 
-# Pulsante Generazione
 if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
     gg = calendar.monthrange(anno_sel, idx_m)[1]
@@ -85,16 +83,16 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
 if 'db' in st.session_state:
     column_config = {k: st.column_config.SelectboxColumn(k, options=medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
 
-    # Il data_editor gestisce le modifiche
+    # Visualizzazione editor
     df_ed = st.data_editor(st.session_state.db, 
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"), 
                            column_config=column_config,
                            hide_index=True, use_container_width=True)
 
-    # Ri-pulizia dei dati per i calcoli e per il download
-    df_clean = df_ed.copy().fillna("")
+    # --- PULIZIA RADICALE PER CALCOLI E EXPORT ---
+    # Sostituiamo ogni valore nullo o stringa "None" con una stringa veramente vuota
+    df_clean = df_ed.copy().replace(["None", "none", "nan", "NaN", None], "")
 
-    # Calcolo Ore Reattivo
     riepilogo = []
     for m in medici_attuali:
         ore = df_clean[df_clean["P 10-14"]==m]["hM"].sum() + df_clean[df_clean["F 08-14"]==m]["hM"].sum() + \
@@ -107,7 +105,7 @@ if 'db' in st.session_state:
     with c1:
         buf_ex = io.BytesIO()
         with pd.ExcelWriter(buf_ex, engine='xlsxwriter') as writer:
-            df_clean.drop(columns=["hM","hP","hN","TIPO"]).to_excel(writer, index=False, sheet_name='Turni')
+            df_clean.drop(columns=["hM","hP","hN","TIPO"]).to_excel(writer, index=False)
             df_ore.to_excel(writer, index=False, sheet_name='Ore')
         st.download_button("📥 SCARICA EXCEL", buf_ex.getvalue(), "Turni.xlsx", use_container_width=True)
 
@@ -120,21 +118,20 @@ if 'db' in st.session_state:
             
             w_g, w_c = 38, 31
             pdf.set_font("Arial", 'B', 7)
-            headers = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
-            for i, col in enumerate(headers): pdf.cell(w_g if i==0 else w_c, 6, col, 1, 0, 'C')
+            h_list = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
+            for i, col in enumerate(h_list): pdf.cell(w_g if i==0 else w_c, 6, col, 1, 0, 'C')
             pdf.ln()
             
             pdf.set_font("Arial", '', 6.5)
-            # LOGICA DI PULIZIA PDF
             for _, r in df_clean.iterrows():
                 pdf.set_fill_color(200, 200, 200) if r["TIPO"] == "E" else pdf.set_fill_color(255, 255, 255)
                 pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
                 
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-                    valore = r[k]
-                    # Se il valore è None, nullo, o la stringa "None", scrivi una cella vuota
-                    testo_cella = str(valore) if valore and str(valore).strip().lower() != "none" else ""
-                    pdf.cell(w_c, 5.2, testo_cella, 1, 0, 'C', True)
+                    val = r[k]
+                    # Controllo finale: se è vuoto, None o nan, scrivi ""
+                    txt = str(val) if (val and str(val).strip().lower() != "none") else ""
+                    pdf.cell(w_c, 5.2, txt, 1, 0, 'C', True)
                 pdf.ln()
             
             pdf.ln(2); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME DI ACCETTAZIONE", 0, 1, 'L')
@@ -155,7 +152,7 @@ if 'db' in st.session_state:
     totale_mensile = df_ore['Ore Totali'].sum()
     st.markdown(f"""
         <div style="background-color:#1E3A8A; padding:20px; border-radius:10px; text-align:center;">
-            <h1 style="color:white; margin:0;">TOTALE ORE COMPLESSIVE PRESIDIO</h1>
-            <p style="color:#60A5FA; font-size:48px; font-weight:bold; margin:0;">{totale_mensile} h</p>
+            <h1 style="color:white; margin:0; font-size:24px;">TOTALE ORE COMPLESSIVE PRESIDIO</h1>
+            <p style="color:#60A5FA; font-size:64px; font-weight:bold; margin:0;">{totale_mensile} h</p>
         </div>
     """, unsafe_allow_html=True)
