@@ -56,11 +56,12 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
     fest = get_festivita(anno_sel)
     gg = calendar.monthrange(anno_sel, idx_m)[1]
     rows = []
-    ita_g = ["LUNEDÌ", "MARTEDÌ", "MERCOLEDÌ", "GIOVÈDI", "VENERDÌ", "SABATO", "DOMENICA"]
+    ita_g = ["LUNEDÌ", "MARTEDÌ", "MERCOLEDÌ", "GIOVEDÌ", "VENERDÌ", "SABATO", "DOMENICA"]
     ven_count = 0
     for d in range(1, gg + 1):
         dt = datetime(anno_sel, idx_m, d); wd = dt.weekday()
         f_n = fest.get((d, idx_m), ""); is_f = wd == 6 or f_n != ""
+        # Prefestivo: Sabato o giorno prima di una festività infrasettimanale
         is_p = wd == 5 or (not is_f and ((dt + timedelta(days=1)).weekday() == 6 or ((dt + timedelta(days=1)).day, (dt + timedelta(days=1)).month) in fest))
         
         # Assegnazione medico per la notte (sempre presente)
@@ -71,16 +72,16 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
         elif wd == 4: ven_count += 1; ass_notte = "Celani" if ven_count % 2 != 0 else "Piscopo"
         elif wd in [5, 6]: ass_notte = "Siracusa"
         
-        # Assegnazione diurna (SOLO prefestivi e festivi)
-        ass_diurna = ass_notte if (is_p or is_f) else ""
+        # LOGICA RIGIDA: Dal Lunedì al Venerdì (wd 0-4) no turni diurni SE non è festivo
+        diurno_attivo = is_f or is_p
         
         prefix = "** " if is_f else ("* " if is_p else "  ")
         rows.append({
             "GIORNO": f"{prefix}{d} {ita_g[wd]} {f_n}",
-            "P 10-14": ass_diurna if is_p else "", 
-            "P 14-20": ass_diurna if is_p else "",
-            "F 08-14": ass_diurna if is_f else "", 
-            "F 14-20": ass_diurna if is_f else "",
+            "P 10-14": ass_notte if is_p else "", 
+            "P 14-20": ass_notte if is_p else "",
+            "F 08-14": ass_notte if is_f else "", 
+            "F 14-20": ass_notte if is_f else "",
             "NOTT 20-08": ass_notte,
             "TIPO": "FEST" if is_f else ("PREF" if is_p else "FER")
         })
@@ -114,14 +115,10 @@ if st.session_state.db is not None:
     # --- LOGICA PDF ---
     pdf = FPDF('P', 'mm', 'A4'); pdf.set_margins(7, 10, 7); pdf.add_page()
     pdf.set_font("Arial", 'B', 10); pdf.cell(0, 6, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", 0, 1, 'C'); pdf.ln(2)
-    
-    w_g = 42 # Giorno
-    w_c = 30 # Colonne turni
-    
+    w_g = 42; w_c = 30 
     pdf.set_font("Arial", 'B', 7)
     h_pdf = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
-    for i, head in enumerate(h_pdf):
-        pdf.cell(w_g if i==0 else w_c, 6, head, 1, 0, 'C')
+    for i, head in enumerate(h_pdf): pdf.cell(w_g if i==0 else w_c, 6, head, 1, 0, 'C')
     pdf.ln()
 
     pdf.set_font("Arial", '', 6.5)
@@ -129,10 +126,8 @@ if st.session_state.db is not None:
         bg_color = (235, 235, 235) if "*" in str(r["GIORNO"]) else (255, 255, 255)
         pdf.set_fill_color(*bg_color)
         pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
-        
         for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
             val = str(r[k]).strip()
-            # Striscia bianca per i feriali (niente diurno) o celle vuote
             if val.lower() in ["none", "nan", "", "0"]: val = ""
             pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
         pdf.ln()
