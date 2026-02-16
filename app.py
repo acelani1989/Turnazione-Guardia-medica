@@ -92,10 +92,7 @@ if st.session_state.db is not None:
         for _, r in df_ore.iterrows(): st.write(f"**{r['M']}**: {r['O']} h")
         st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:20px;font-weight:bold;margin:0;">{tot_p} h</p></div>', unsafe_allow_html=True)
 
-    # --- GENERAZIONE ANTEPRIMA ISTANTANEA ---
-    st.write("---")
-    st.subheader("👁️ ANTEPRIMA PDF (PRONTO PER STAMPA)")
-    
+    # --- GENERAZIONE PDF ---
     pdf = FPDF('P', 'mm', 'A4'); pdf.set_margins(8, 8, 8); pdf.add_page()
     pdf.set_font("Arial", 'B', 10); pdf.cell(0, 6, f"PCA PORTO EMPEDOCLE - {mese_sel} {anno_sel}", 0, 1, 'C'); pdf.ln(2)
     w_g, w_c = 38, 31; pdf.set_font("Arial", 'B', 7)
@@ -118,10 +115,21 @@ if st.session_state.db is not None:
     pdf.set_font("Arial", 'B', 8); pdf.cell(50, 7, "TOTALE PRESIDIO", 1, 0, 'C')
     pdf.cell(30, 7, f"{tot_p} h", 1, 0, 'C'); pdf.cell(60, 7, "", 1, 1, 'C')
 
-    # Visualizzazione con EMBED (più robusto di iframe per Edge)
-    pdf_base64 = base64.b64encode(pdf.output(dest='S').encode('latin-1')).decode('utf-8')
-    pdf_embed = f'<embed src="data:application/pdf;base64,{pdf_base64}" width="100%" height="1000" type="application/pdf">'
-    st.markdown(pdf_embed, unsafe_allow_html=True)
-    
+    # --- SEZIONE ANTEPRIMA ---
     st.write("---")
-    st.download_button("💾 SALVA PDF SUL PC", pdf.output(dest='S').encode('latin-1'), f"Turni_{mese_sel}.pdf", "application/pdf", use_container_width=True)
+    col_l, col_r = st.columns([1, 1])
+    with col_l:
+        st.subheader("👁️ Anteprima di Stampa")
+    with col_r:
+        # Tasto per scaricare se l'anteprima fallisce
+        st.download_button("💾 Salva PDF sul PC", pdf.output(dest='S').encode('latin-1'), f"Turni_{mese_sel}.pdf", "application/pdf")
+
+    # Metodo ultra-compatibile: Object tag
+    pdf_base64 = base64.b64encode(pdf.output(dest='S').encode('latin-1')).decode('utf-8')
+    pdf_display = f"""
+        <object data="data:application/pdf;base64,{pdf_base64}" type="application/pdf" width="100%" height="800px">
+            <p>Il tuo browser non supporta l'anteprima diretta. 
+            <a href="data:application/pdf;base64,{pdf_base64}" download="Turni_{mese_sel}.pdf">Clicca qui per scaricare il PDF</a></p>
+        </object>
+    """
+    st.markdown(pdf_display, unsafe_allow_html=True)
