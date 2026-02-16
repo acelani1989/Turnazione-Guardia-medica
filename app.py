@@ -4,7 +4,7 @@ import calendar
 import io
 from datetime import datetime, timedelta
 
-# Gestione sicura della libreria PDF
+# Gestione sicura delle librerie esterne
 try:
     from fpdf import FPDF
     pdf_ok = True
@@ -72,7 +72,7 @@ if st.button("🚀 GENERA SCHEMA", type="primary", use_container_width=True):
         })
     st.session_state.db = pd.DataFrame(rows)
 
-# --- EDITOR E CALCOLO ---
+# --- EDITOR E DOWNLOAD ---
 if not st.session_state.db.empty:
     df_ed = st.data_editor(
         st.session_state.db,
@@ -88,7 +88,7 @@ if not st.session_state.db.empty:
         hide_index=True, use_container_width=True
     )
 
-    # Calcolo Ore
+    # Conteggio ore
     res = []
     for m in medici:
         ore = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + \
@@ -102,25 +102,39 @@ if not st.session_state.db.empty:
     st.table(pd.DataFrame(res))
     st.write(f"**TOTALE ORE COMPLESSIVE: {sum(r['Ore'] for r in res)}**")
 
-    # EXPORT PDF
-    if pdf_ok and st.button("📄 SCARICA PDF UFFICIALE"):
-        pdf = FPDF('L', 'mm', 'A4')
-        pdf.add_page()
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(0, 10, "PRESIDIO DI CONTINUITA' ASSISTENZIALE PORTO EMPEDOCLE", 0, 1, 'C')
-        pdf.cell(0, 10, f"TURNI {mese_sel} {anno_sel}", 0, 1, 'C')
-        pdf.ln(5)
-        pdf.set_font("Arial", 'B', 8)
-        header = ["GIORNO", "PREF 10-14", "PREF 14-20", "FEST 08-14", "FEST 14-20", "NOTT 20-08"]
-        for col in header: pdf.cell(46, 10, col, 1, 0, 'C')
-        pdf.ln()
-        pdf.set_font("Arial", '', 8)
-        for _, r in df_ed.iterrows():
-            pdf.cell(46, 8, str(r["GIORNO"]), 1)
-            pdf.cell(46, 8, str(r["P 10-14"]), 1, 0, 'C')
-            pdf.cell(46, 8, str(r["P 14-20"]), 1, 0, 'C')
-            pdf.cell(46, 8, str(r["F 08-14"]), 1, 0, 'C')
-            pdf.cell(46, 8, str(r["F 14-20"]), 1, 0, 'C')
-            pdf.cell(46, 8, str(r["NOTT 20-08"]), 1, 0, 'C')
-            pdf.ln()
-        st.download_button("Salva PDF", pdf.output(dest='S').encode('latin-1'), f"Turni_{mese_sel}.pdf", "application/pdf")
+    # PULSANTI EXPORT
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # EXCEL
+        buffer_ex = io.BytesIO()
+        with pd.ExcelWriter(buffer_ex, engine='xlsxwriter') as writer:
+            df_ed.drop(columns=["hM","hP","hN"]).to_excel(writer, index=False, sheet_name='Turni')
+        st.download_button("📥 SCARICA EXCEL", buffer_ex.getvalue(), f"Turni_{mese_sel}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+
+    with col2:
+        # PDF
+        if pdf_ok:
+            if st.button("📄 GENERA PDF", use_container_width=True):
+                pdf = FPDF('L', 'mm', 'A4')
+                pdf.add_page()
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "PRESIDIO DI CONTINUITA' ASSISTENZIALE PORTO EMPEDOCLE", 0, 1, 'C')
+                pdf.cell(0, 10, f"TURNI {mese_sel} {anno_sel}", 0, 1, 'C')
+                pdf.ln(5)
+                pdf.set_font("Arial", 'B', 8)
+                header = ["GIORNO", "PREF 10-14", "PREF 14-20", "FEST 08-14", "FEST 14-20", "NOTT 20-08"]
+                for col in header: pdf.cell(46, 10, col, 1, 0, 'C')
+                pdf.ln()
+                pdf.set_font("Arial", '', 8)
+                for _, r in df_ed.iterrows():
+                    pdf.cell(46, 8, str(r["GIORNO"]), 1)
+                    pdf.cell(46, 8, str(r["P 10-14"]), 1, 0, 'C')
+                    pdf.cell(46, 8, str(r["P 14-20"]), 1, 0, 'C')
+                    pdf.cell(46, 8, str(r["F 08-14"]), 1, 0, 'C')
+                    pdf.cell(46, 8, str(r["F 14-20"]), 1, 0, 'C')
+                    pdf.cell(46, 8, str(r["NOTT 20-08"]), 1, 0, 'C')
+                    pdf.ln()
+                st.download_button("💾 SALVA PDF", pdf.output(dest='S').encode('latin-1'), f"Turni_{mese_sel}.pdf", "application/pdf", use_container_width=True)
+        else:
+            st.error("Libreria PDF non trovata nel requirements.txt")
