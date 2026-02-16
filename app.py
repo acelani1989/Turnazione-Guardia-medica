@@ -102,8 +102,6 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
         elif wd in [5, 6]: ass_notte = "Siracusa"
         
         ass_diurna = ass_notte if ((is_p or is_f) and ass_notte != "Lombardo") else ""
-        
-        # Ripristino asterischi
         prefix = "** " if is_f else ("* " if is_p else "  ")
         
         rows.append({
@@ -117,9 +115,22 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
         })
     st.session_state.db = pd.DataFrame(rows).replace(["None", "nan", "NaN", "0", 0, "0.0"], "")
 
-# --- 5. EDITOR, PDF E RIEPILOGO ORE ---
+# --- 5. EDITOR E PDF ---
 if st.session_state.db is not None:
-    # 1. GENERAZIONE PDF (per averlo pronto per il tasto in alto)
+    # Calcolo Ore per Sidebar e PDF
+    riepilogo_medici = []
+    tot_ore_mese = 0
+    for m in st.session_state.medici_lista:
+        o_pref = st.session_state.db[(st.session_state.db["P 10-14"] == m) & (st.session_state.db["TIPO"] == "PREF")].shape[0] * 4
+        o_fest = st.session_state.db[(st.session_state.db["F 08-14"] == m) & (st.session_state.db["TIPO"] == "FEST")].shape[0] * 6
+        o_pom = (st.session_state.db[st.session_state.db["P 14-20"] == m].shape[0] * 6) + (st.session_state.db[st.session_state.db["F 14-20"] == m].shape[0] * 6)
+        o_not = st.session_state.db[st.session_state.db["NOTT 20-08"] == m].shape[0] * 12
+        tot = int(o_pref + o_fest + o_pom + o_not)
+        if tot > 0:
+            riepilogo_medici.append((m, tot))
+            tot_ore_mese += tot
+
+    # CREAZIONE PDF
     pdf = FPDF('P', 'mm', 'A4')
     pdf.set_margins(7, 10, 7)
     pdf.add_page()
@@ -141,29 +152,32 @@ if st.session_state.db is not None:
             pdf.cell(w_c, 5.2, val, 1, 0, 'C')
         pdf.ln()
 
-    # TASTO PDF IN ALTO (sopra la tabella)
+    # AGGIUNTA RIEPILOGO ORE E FIRME NEL PDF
+    pdf.ln(5)
+    pdf.set_font("helvetica", 'B', 8)
+    pdf.cell(0, 6, "RIEPILOGO ORE E FIRME", new_x="LMARGIN", new_y="NEXT")
+    for m, o in riepilogo_medici:
+        pdf.set_font("helvetica", 'B', 7)
+        pdf.cell(45, 7, str(m), border=1, align='C')
+        pdf.cell(25, 7, f"{o} h", border=1, align='C')
+        pdf.cell(65, 7, " Firma: ________________", border=1, align='L', new_x="LMARGIN", new_y="NEXT")
+    
+    pdf.set_font("helvetica", 'B', 8); pdf.set_fill_color(230, 230, 250)
+    pdf.cell(45, 7, "TOTALE MENSILE", border=1, align='C', fill=True)
+    pdf.cell(25, 7, f"{tot_ore_mese} h", border=1, align='C', fill=True)
+    pdf.cell(65, 7, "", border=1, fill=True)
+
+    # TASTO PDF IN ALTO
     st.download_button("💾 SCARICA PDF FINALE", bytes(pdf.output()), f"Turni_{mese_sel}.pdf", "application/pdf", use_container_width=True)
 
-    # 2. TABELLA EDITABILE
+    # TABELLA EDITABILE
     config = {k: st.column_config.SelectboxColumn(k, options=[""] + st.session_state.medici_lista) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
-    df_ed = st.data_editor(st.session_state.db, 
+    df_ed = st.data_editor(st.session_state.db.replace(["None", "nan", "NaN", "0", 0, "0.0"], ""), 
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
                            column_config=config, hide_index=True, use_container_width=True)
     st.session_state.db = df_ed
 
-    # 3. RIEPILOGO ORE E TOTALE MENSILE (Sidebar)
-    riepilogo_medici = []
-    tot_ore_mese = 0
-    for m in st.session_state.medici_lista:
-        o_pref = df_ed[(df_ed["P 10-14"] == m) & (df_ed["TIPO"] == "PREF")].shape[0] * 4
-        o_fest = df_ed[(df_ed["F 08-14"] == m) & (df_ed["TIPO"] == "FEST")].shape[0] * 6
-        o_pom = (df_ed[df_ed["P 14-20"] == m].shape[0] * 6) + (df_ed[df_ed["F 14-20"] == m].shape[0] * 6)
-        o_not = df_ed[df_ed["NOTT 20-08"] == m].shape[0] * 12
-        tot = int(o_pref + o_fest + o_pom + o_not)
-        if tot > 0:
-            riepilogo_medici.append((m, tot))
-            tot_ore_mese += tot
-    
+    # Riepilogo Sidebar
     with placeholder_sidebar:
         st.subheader("📊 Ore Medici")
         for m, o in riepilogo_medici:
