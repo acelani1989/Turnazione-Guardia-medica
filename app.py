@@ -10,7 +10,7 @@ try:
 except ImportError:
     pdf_ok = False
 
-# --- LOGICA CALENDARIO ---
+# --- LOGICA CALCOLI ---
 def get_festivita(anno):
     def pasqua(y):
         a, b, c = y % 19, y // 100, y % 100
@@ -49,11 +49,7 @@ if st.button("🚀 GENERA SCHEMA", type="primary", use_container_width=True):
         is_f = wd == 6 or f_n != ""
         is_p = wd == 5 or (not is_f and ((dt + timedelta(days=1)).weekday() == 6 or ((dt + timedelta(days=1)).day, (dt + timedelta(days=1)).month) in fest))
         
-        # Asterischi differenziati
-        if is_f: prefix = "** "
-        elif is_p: prefix = "* "
-        else: prefix = ""
-        
+        prefix = "** " if is_f else ("* " if is_p else "")
         label = f"{prefix}{d} {ita_g[wd]} {f_n}"
         
         rows.append({"GIORNO": label, "P 10-14": "", "P 14-20": "", "F 08-14": "", "F 14-20": "", "NOTT 20-08": "", 
@@ -94,6 +90,7 @@ if 'db' in st.session_state:
             pdf.cell(0, 6, f"{mese_sel} {anno_sel}", 0, 1, 'C')
             pdf.ln(2)
             
+            # Tabella Turni
             w_g, w_c = 38, 31
             pdf.set_font("Arial", 'B', 7)
             h = ["GIORNO", "PR 10-14", "PR 14-20", "FE 08-14", "FE 14-20", "NOT 20-08"]
@@ -102,28 +99,35 @@ if 'db' in st.session_state:
             
             pdf.set_font("Arial", '', 6.5)
             for _, r in df_ed.iterrows():
-                # Evidenziazione UGUALI (Grigio 200 per entrambi)
                 pdf.set_fill_color(200, 200, 200) if r["TIPO"] == "E" else pdf.set_fill_color(255, 255, 255)
-                
                 pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
                     val = str(r[k]) if r[k] and str(r[k]).lower() != "none" else ""
                     pdf.cell(w_c, 5.2, val, 1, 0, 'C', True)
                 pdf.ln()
             
-            # Legenda e Riepilogo
+            # Legenda e Riepilogo Ore
             pdf.ln(2)
             pdf.set_font("Arial", 'I', 6)
-            pdf.cell(0, 4, "Legenda: ** Festivo | * Prefestivo (Entrambi evidenziati in grigio)", 0, 1, 'L')
+            pdf.cell(0, 4, "Legenda: ** Festivo | * Prefestivo (Sfondo grigio)", 0, 1, 'L')
             
             pdf.ln(2)
             pdf.set_font("Arial", 'B', 8)
             pdf.cell(0, 5, "RIEPILOGO ORE TOTALI PER MEDICO", 0, 1, 'L')
             pdf.set_font("Arial", 'B', 7)
             pdf.cell(50, 5, "MEDICO", 1, 0, 'C'); pdf.cell(30, 5, "ORE", 1, 1, 'C')
-            pdf.set_font("Arial", '', 7)
+            
             for _, row_o in df_ore.iterrows():
+                pdf.set_font("Arial", 'B', 7) 
                 pdf.cell(50, 5, str(row_o["Medico"]), 1, 0, 'C')
+                pdf.set_font("Arial", '', 7) 
                 pdf.cell(30, 5, str(row_o["Ore Totali"]), 1, 1, 'C')
             
-            st.download_button("💾 SALVA PDF", pdf.output(dest='S').encode('latin-1'), "Turni.pdf", "application/pdf", use_container_width=True)
+            # --- SEZIONE FIRMA SOLO MEDICO ---
+            pdf.ln(10)
+            pdf.set_font("Arial", 'B', 8)
+            pdf.cell(0, 5, "Firma del Medico per accettazione", 0, 1, 'L')
+            pdf.ln(5)
+            pdf.cell(0, 5, "_________________________________", 0, 1, 'L')
+            
+            st.download_button("💾 SALVA PDF FINALE", pdf.output(dest='S').encode('latin-1'), "Turni_e_Ore.pdf", "application/pdf", use_container_width=True)
