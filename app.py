@@ -39,6 +39,8 @@ with st.sidebar:
     mesi_ita = ["GENNAIO", "FEBBRAIO", "MARZO", "APRILE", "MAGGIO", "GIUGNO", "LUGLIO", "AGOSTO", "SETTEMBRE", "OTTOBRE", "NOVEMBRE", "DICEMBRE"]
     mese_sel = st.selectbox("Mese", mesi_ita, index=datetime.now().month - 1)
     idx_m = mesi_ita.index(mese_sel) + 1
+    
+    placeholder_sidebar = st.container()
 
 if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_width=True):
     fest = get_festivita(anno_sel)
@@ -88,7 +90,6 @@ if 'db' in st.session_state:
                            column_config=column_config,
                            hide_index=True, use_container_width=True).fillna("")
 
-    # Calcolo Ore
     riepilogo = []
     for m in medici_attuali:
         ore = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + df_ed[df_ed["F 08-14"]==m]["hM"].sum() + \
@@ -96,6 +97,20 @@ if 'db' in st.session_state:
               df_ed[df_ed["NOTT 20-08"]==m]["hN"].sum()
         riepilogo.append({"Medico": m, "Ore Totali": int(ore)})
     df_ore = pd.DataFrame(riepilogo)
+    totale_mensile = df_ore['Ore Totali'].sum()
+
+    with placeholder_sidebar:
+        st.write("---")
+        st.subheader("📊 Ore in tempo reale")
+        for _, row in df_ore.iterrows():
+            st.write(f"**{row['Medico']}**: {row['Ore Totali']} h")
+        
+        st.markdown(f"""
+            <div style="background-color:#1E3A8A; padding:10px; border-radius:8px; text-align:center; border: 1px solid #3B82F6;">
+                <p style="color:#BFDBFE; margin:0; font-size:12px;">Totale Complessivo</p>
+                <p style="color:white; font-size:24px; font-weight:bold; margin:0;">{totale_mensile} h</p>
+            </div>
+        """, unsafe_allow_html=True)
 
     c1, c2 = st.columns(2)
     with c1:
@@ -119,9 +134,7 @@ if 'db' in st.session_state:
             pdf.ln()
             
             pdf.set_font("Arial", '', 6.5)
-            # Pulizia forzata per il PDF
             df_pdf = df_ed.copy().astype(str).replace(['None', 'nan', 'nan '], '')
-            
             for _, r in df_pdf.iterrows():
                 pdf.set_fill_color(225, 225, 225) if r["TIPO"] == "E" else pdf.set_fill_color(255, 255, 255)
                 pdf.cell(w_g, 5.2, r["GIORNO"], 1, 0, 'L', True)
@@ -129,14 +142,21 @@ if 'db' in st.session_state:
                     pdf.cell(w_c, 5.2, r[k], 1, 0, 'C', True)
                 pdf.ln()
             
+            # --- AGGIUNTA TOTALE PDF ---
             pdf.ln(2); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
             pdf.set_font("Arial", 'B', 7); pdf.cell(50, 6, "MEDICO", 1, 0, 'C'); pdf.cell(30, 6, "ORE", 1, 0, 'C'); pdf.cell(60, 6, "FIRMA", 1, 1, 'C')
             for _, row_o in df_ore.iterrows():
                 pdf.set_font("Arial", 'B', 7); pdf.cell(50, 8, str(row_o["Medico"]), 1, 0, 'C')
                 pdf.set_font("Arial", '', 7); pdf.cell(30, 8, str(row_o["Ore Totali"]), 1, 0, 'C'); pdf.cell(60, 8, "", 1, 1, 'C')
+            
+            # Riga finale totale in PDF
+            pdf.set_font("Arial", 'B', 8)
+            pdf.cell(50, 8, "TOTALE COMPLESSIVO", 1, 0, 'C')
+            pdf.cell(30, 8, f"{totale_mensile} h", 1, 0, 'C')
+            pdf.cell(60, 8, "", 1, 1, 'C')
+
             st.download_button("💾 SALVA PDF", pdf.output(dest='S').encode('latin-1'), "Turni.pdf", "application/pdf", use_container_width=True)
 
-    # --- BOX TOTALE RIVISITATO ---
     st.write("---")
     st.subheader(f"📊 Riepilogo Ore Anteprima - {mese_sel}")
     col_metrics = st.columns(len(medici_attuali))
@@ -144,7 +164,6 @@ if 'db' in st.session_state:
         ore_m = df_ore[df_ore["Medico"] == m]["Ore Totali"].values[0]
         col_metrics[i].metric(label=f"Ore {m}", value=f"{ore_m} h")
     
-    totale_mensile = df_ore['Ore Totali'].sum()
     st.markdown(f"""
         <div style="background-color:#1E3A8A; padding:15px; border-radius:10px; text-align:center; border: 1px solid #3B82F6;">
             <h3 style="color:#BFDBFE; margin:0; font-size:18px; font-weight:normal;">Totale Ore Complessivo Presidio</h3>
