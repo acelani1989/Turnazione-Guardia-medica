@@ -73,38 +73,36 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
             "GIORNO": f"{prefix}{d} {ita_g[wd]} {f_n}",
             "P 10-14": ass if is_p else "", "P 14-20": ass if is_p else "",
             "F 08-14": ass if is_f else "", "F 14-20": ass if is_f else "",
-            "NOTT 20-08": ass, 
-            "hM": float(4 if is_p else (6 if is_f else 0)),
-            "hP": float(6 if (is_p or is_f) else 0), 
-            "hN": float(12)
+            "NOTT 20-08": ass,
+            "TIPO": "FEST" if is_f else ("PREF" if is_p else "FER")
         })
-    st.session_state.db = pd.DataFrame(rows)
+    st.session_state.db = pd.DataFrame(rows).replace([None, "None", "nan", "0"], "")
 
 if st.session_state.db is not None:
-    # --- PULIZIA SOLO VISIVA PER L'EDITOR ---
-    # Creiamo una copia per l'editor che non rovini i calcoli numerici
-    df_visuale = st.session_state.db.copy()
-    for col in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-        df_visuale[col] = df_visuale[col].apply(lambda x: "" if str(x).lower() in ["none", "nan", "0"] else x)
-
     config = {k: st.column_config.SelectboxColumn(k, options=[""] + medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
     
-    # L'editor restituisce i dati modificati
-    df_ed = st.data_editor(df_visuale, 
+    df_ed = st.data_editor(st.session_state.db, 
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"),
                            column_config=config, hide_index=True, use_container_width=True)
 
-    # --- CALCOLO ORE (SICURO) ---
+    # --- NUOVA LOGICA CALCOLO ORE (SICURA AL 100%) ---
     riepilogo = []
     for m in medici_attuali:
         if not m or m == "": continue
-        # Sommiamo le ore solo se il medico m è presente nelle colonne corrispondenti
-        ore = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + \
-              df_ed[df_ed["F 08-14"]==m]["hM"].sum() + \
-              df_ed[df_ed["P 14-20"]==m]["hP"].sum() + \
-              df_ed[df_ed["F 14-20"]==m]["hP"].sum() + \
-              df_ed[df_ed["NOTT 20-08"]==m]["hN"].sum()
-        riepilogo.append({"Medico": m, "Ore Totali": int(ore)})
+        
+        # Ore Mattina (P 10-14 = 4h / F 08-14 = 6h)
+        ore_m = (df_ed[(df_ed["P 10-14"] == m) & (df_ed["TIPO"] == "PREF")].shape[0] * 4) + \
+                (df_ed[(df_ed["F 08-14"] == m) & (df_ed["TIPO"] == "FEST")].shape[0] * 6)
+        
+        # Ore Pomeriggio (P 14-20 o F 14-20 = sempre 6h)
+        ore_p = (df_ed[df_ed["P 14-20"] == m].shape[0] * 6) + \
+                (df_ed[df_ed["F 14-20"] == m].shape[0] * 6)
+        
+        # Ore Notte (20-08 = sempre 12h)
+        ore_n = df_ed[df_ed["NOTT 20-08"] == m].shape[0] * 12
+        
+        tot = ore_m + ore_p + ore_n
+        riepilogo.append({"Medico": m, "Ore Totali": int(tot)})
     
     df_ore = pd.DataFrame(riepilogo)
     totale_m = df_ore['Ore Totali'].sum() if not df_ore.empty else 0
@@ -114,7 +112,7 @@ if st.session_state.db is not None:
         for _, r in df_ore.iterrows(): st.write(f"**{r['Medico']}**: {r['Ore Totali']} h")
         st.markdown(f'<div style="background-color:#1E3A8A;padding:10px;border-radius:8px;text-align:center;"><p style="color:white;font-size:22px;font-weight:bold;margin:0;">{totale_m} h</p></div>', unsafe_allow_html=True)
 
-    # --- SEZIONE PDF (CON STRISCIA BIANCA) ---
+    # --- SEZIONE PDF ---
     st.write("---")
     col1, col2 = st.columns(2)
     
@@ -147,11 +145,9 @@ if st.session_state.db is not None:
     pdf_output = pdf.output(dest='S').encode('latin-1')
 
     with col1:
-        mostra = st.button("👁️ MOSTRA ANTEPRIMA PDF", use_container_width=True)
+        if st.button("👁️ MOSTRA ANTEPRIMA PDF", use_container_width=True):
+            pdf_b64 = base64.b64encode(pdf_output).decode('utf-8')
+            pdf_display = f'<object data="data:application/pdf;base64,{pdf_b64}" type="application/pdf" width="100%" height="800px"></object>'
+            st.markdown(pdf_display, unsafe_allow_html=True)
     with col2:
         st.download_button("💾 SALVA PDF SUL PC", pdf_output, f"Turni_{mese_sel}.pdf", "application/pdf", use_container_width=True)
-
-    if mostra:
-        pdf_b64 = base64.b64encode(pdf_output).decode('utf-8')
-        pdf_display = f'<object data="data:application/pdf;base64,{pdf_b64}" type="application/pdf" width="100%" height="800px"></object>'
-        st.markdown(pdf_display, unsafe_allow_html=True)
