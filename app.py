@@ -34,13 +34,14 @@ if 'lista_medici' not in st.session_state:
 
 with st.sidebar:
     st.header("⚙️ CONFIGURAZIONE")
+    # Aggiunto lo spazio vuoto per permettere di svuotare le celle
+    opzioni_con_vuoto = [""] + st.session_state.lista_medici
     medici_attuali = st.multiselect("Medici in servizio", options=st.session_state.lista_medici, default=st.session_state.lista_medici)
     anno_sel = st.number_input("Anno", 2024, 2030, 2026)
     mesi_ita = ["GENNAIO", "FEBBRAIO", "MARZO", "APRILE", "MAGGIO", "GIUGNO", "LUGLIO", "AGOSTO", "SETTEMBRE", "OTTOBRE", "NOVEMBRE", "DICEMBRE"]
     mese_sel = st.selectbox("Mese", mesi_ita, index=datetime.now().month - 1)
     idx_m = mesi_ita.index(mese_sel) + 1
     
-    # Contenitore per il riepilogo laterale
     placeholder_sidebar = st.container()
 
 if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_width=True):
@@ -57,25 +58,25 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
         is_f = wd == 6 or f_n != ""
         is_p = wd == 5 or (not is_f and ((dt + timedelta(days=1)).weekday() == 6 or ((dt + timedelta(days=1)).day, (dt + timedelta(days=1)).month) in fest))
         
-        assegnato = ""
-        if wd == 0 or wd == 2: assegnato = "Celani"
-        elif wd == 1: assegnato = "Piscopo"
-        elif wd == 3: assegnato = "Lombardo"
+        ass = ""
+        if wd == 0 or wd == 2: ass = "Celani"
+        elif wd == 1: ass = "Piscopo"
+        elif wd == 3: ass = "Lombardo"
         elif wd == 4:
             ven_count += 1
-            assegnato = "Celani" if ven_count % 2 != 0 else "Piscopo"
-        elif wd == 5 or wd == 6: assegnato = "Siracusa"
+            ass = "Celani" if ven_count % 2 != 0 else "Piscopo"
+        elif wd == 5 or wd == 6: ass = "Siracusa"
 
         prefix = "** " if is_f else ("* " if is_p else "")
         label = f"{prefix}{d} {ita_g[wd]} {f_n}"
         
         rows.append({
-            "GIORNO": label, 
-            "P 10-14": assegnato if is_p else "", 
-            "P 14-20": assegnato if is_p else "",
-            "F 08-14": assegnato if is_f else "", 
-            "F 14-20": assegnato if is_f else "", 
-            "NOTT 20-08": assegnato,
+            "GIORNO": str(label), 
+            "P 10-14": str(ass) if is_p else "", 
+            "P 14-20": str(ass) if is_p else "",
+            "F 08-14": str(ass) if is_f else "", 
+            "F 14-20": str(ass) if is_f else "", 
+            "NOTT 20-08": str(ass),
             "hM": 4 if is_p else (6 if is_f else 0), 
             "hP": 6 if (is_p or is_f) else 0, 
             "hN": 12, 
@@ -84,10 +85,14 @@ if st.button("🚀 GENERA SCHEMA AUTOMATICO", type="primary", use_container_widt
     st.session_state.db = pd.DataFrame(rows)
 
 if 'db' in st.session_state:
-    column_config = {k: st.column_config.SelectboxColumn(k, options=medici_attuali) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
+    column_config = {k: st.column_config.SelectboxColumn(k, options=opzioni_con_vuoto) for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]}
 
-    # Editor della tabella
-    df_ed = st.data_editor(st.session_state.db, 
+    # Pulizia forzata prima dell'editor per evitare scritte "None" o "nan"
+    df_clean = st.session_state.db.copy().fillna("").astype(str)
+    for col in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
+        df_clean[col] = df_clean[col].replace(["None", "nan", "None ", "nan "], "")
+
+    df_ed = st.data_editor(df_clean, 
                            column_order=("GIORNO", "P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"), 
                            column_config=column_config,
                            hide_index=True, use_container_width=True).fillna("")
@@ -95,12 +100,16 @@ if 'db' in st.session_state:
     # Calcolo Ore
     riepilogo = []
     for m in medici_attuali:
-        ore = df_ed[df_ed["P 10-14"]==m]["hM"].sum() + df_ed[df_ed["F 08-14"]==m]["hM"].sum() + \
-              df_ed[df_ed["P 14-20"]==m]["hP"].sum() + df_ed[df_ed["F 14-20"]==m]["hP"].sum() + \
-              df_ed[df_ed["NOTT 20-08"]==m]["hN"].sum()
+        if m == "": continue
+        # Convertiamo hM, hP, hN in numeri per il calcolo
+        ore = df_ed[df_ed["P 10-14"]==m]["hM"].astype(float).sum() + \
+              df_ed[df_ed["F 08-14"]==m]["hM"].astype(float).sum() + \
+              df_ed[df_ed["P 14-20"]==m]["hP"].astype(float).sum() + \
+              df_ed[df_ed["F 14-20"]==m]["hP"].astype(float).sum() + \
+              df_ed[df_ed["NOTT 20-08"]==m]["hN"].astype(float).sum()
         riepilogo.append({"Medico": m, "Ore Totali": int(ore)})
     df_ore = pd.DataFrame(riepilogo)
-    totale_mensile = df_ore['Ore Totali'].sum()
+    totale_mensile = df_ore['Ore Totali'].sum() if not df_ore.empty else 0
 
     # --- AGGIORNAMENTO SIDEBAR (UNICO RIEPILOGO) ---
     with placeholder_sidebar:
@@ -116,7 +125,6 @@ if 'db' in st.session_state:
             </div>
         """, unsafe_allow_html=True)
 
-    # Pulsanti Download
     c1, c2 = st.columns(2)
     with c1:
         buf_ex = io.BytesIO()
@@ -139,20 +147,21 @@ if 'db' in st.session_state:
             pdf.ln()
             
             pdf.set_font("Arial", '', 6.5)
-            df_pdf = df_ed.copy().astype(str).replace(['None', 'nan', 'nan '], '')
-            for _, r in df_pdf.iterrows():
+            for _, r in df_ed.iterrows():
                 pdf.set_fill_color(225, 225, 225) if r["TIPO"] == "E" else pdf.set_fill_color(255, 255, 255)
-                pdf.cell(w_g, 5.2, r["GIORNO"], 1, 0, 'L', True)
+                pdf.cell(w_g, 5.2, str(r["GIORNO"]), 1, 0, 'L', True)
                 for k in ["P 10-14", "P 14-20", "F 08-14", "F 14-20", "NOTT 20-08"]:
-                    pdf.cell(w_c, 5.2, r[k], 1, 0, 'C', True)
+                    valore = str(r[k]).strip()
+                    if valore.lower() in ["none", "nan", ""]: valore = ""
+                    pdf.cell(w_c, 5.2, valore, 1, 0, 'C', True)
                 pdf.ln()
             
-            # Riepilogo Ore nel PDF
             pdf.ln(2); pdf.set_font("Arial", 'B', 8); pdf.cell(0, 5, "RIEPILOGO ORE E FIRME", 0, 1, 'L')
             pdf.set_font("Arial", 'B', 7); pdf.cell(50, 6, "MEDICO", 1, 0, 'C'); pdf.cell(30, 6, "ORE", 1, 0, 'C'); pdf.cell(60, 6, "FIRMA", 1, 1, 'C')
             for _, row_o in df_ore.iterrows():
-                pdf.set_font("Arial", 'B', 7); pdf.cell(50, 8, str(row_o["Medico"]), 1, 0, 'C')
-                pdf.set_font("Arial", '', 7); pdf.cell(30, 8, str(row_o["Ore Totali"]), 1, 0, 'C'); pdf.cell(60, 8, "", 1, 1, 'C')
+                pdf.cell(50, 8, str(row_o["Medico"]), 1, 0, 'C')
+                pdf.cell(30, 8, str(row_o["Ore Totali"]), 1, 0, 'C')
+                pdf.cell(60, 8, "", 1, 1, 'C')
             
             # Riga Totale PDF
             pdf.set_font("Arial", 'B', 8); pdf.cell(50, 8, "TOTALE COMPLESSIVO", 1, 0, 'C')
